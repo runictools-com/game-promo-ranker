@@ -217,6 +217,14 @@ a { color: inherit; }
   font-size: .85rem; padding: 9px 11px; cursor: pointer;
 }
 .filters select:focus { outline: none; border-color: var(--accent); }
+/* New filters use the same existing control styling. */
+.filters input[type="number"], .filters input[type="date"], .filters input[type="month"] {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; color: var(--text);
+  font-size: .85rem; padding: 9px 11px; max-width: 100%; color-scheme: dark;
+}
+.filters details { max-width: 100%; }
+.filters details select { max-width: 100%; }
+.free-grid.radar-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .filters button.secondary {
   background: var(--surface-3); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
   font-size: .84rem; padding: 9px 13px; cursor: pointer; font-family: inherit;

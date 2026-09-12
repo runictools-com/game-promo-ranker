@@ -75,19 +75,11 @@ def _slug(el: dict) -> str:
     return ps.split("/")[0] if ps else ""
 
 
-# Edições/sufixos que não fazem parte do "núcleo" do título (p/ casar com a Steam).
-_EDITION_RE = re.compile(
-    r"\b(complete|deluxe|ultimate|gold|goty|game of the year|definitive|enhanced|"
-    r"standard|edition|bundle|collection|remastered|anniversary|director'?s cut|"
-    r"premium|digital)\b", re.IGNORECASE)
-
-
 def _norm_title(title: str) -> str:
-    """Normaliza p/ casar títulos entre lojas: sem acento, sem pontuação, sem edição."""
+    """Normalize typography, preserving edition identity for price comparisons."""
     s = (title or "").replace("™", "").replace("®", "").replace("©", "")
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     s = s.lower()
-    s = _EDITION_RE.sub(" ", s)
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
@@ -132,6 +124,8 @@ def build_entries(raw):
     out, seen = [], set()
     for el in raw:
         tp  = (el.get("price") or {}).get("totalPrice") or {}
+        if tp.get("currencyCode") != "BRL":
+            continue
         fmt = tp.get("fmtPrice") or {}
         disc_cents = tp.get("discountPrice")
         orig_cents = tp.get("originalPrice")
@@ -170,11 +164,24 @@ def load_steam_index(games_json_path):
     """{titulo_normalizado: {price_brl, name, url}} a partir do games.json da Steam."""
     idx = {}
     try:
-        d = json.load(open(games_json_path, encoding="utf-8"))
+        with open(games_json_path, encoding="utf-8") as stream:
+            d = json.load(stream)
     except Exception:
+        return idx
+    # Comparisons must use a recent, explicitly Brazilian snapshot.
+    try:
+        generated = datetime.fromisoformat(d["generated_at"])
+        if generated.tzinfo is None:
+            return idx
+        age = (datetime.now(timezone.utc) - generated).total_seconds()
+        if not 0 <= age <= 36 * 3600:
+            return idx
+    except (KeyError, TypeError, ValueError):
         return idx
     for b in d.get("blocks", []):
         for g in b.get("games", []):
+            if g.get("currency") != "BRL" or "/app/" not in g.get("url", ""):
+                continue
             price = _parse_brl(g.get("sale_price", ""))
             if price <= 0:
                 continue

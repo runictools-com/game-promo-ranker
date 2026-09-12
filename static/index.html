@@ -42,7 +42,7 @@
   <!-- ═══ ABA: Promoções Steam ═══════════════════════════════════════════ -->
   <section id="tab-deals">
     <div class="formula">
-      score 0–10 = qualidade(Wilson das reviews) × fama(log de reviews) × bônus de desconto
+      score 0–10 = Wilson 95% × oferta (desconto e histórico BR observado); sem bônus de fama
     </div>
 
     <!-- Busca de perfil Steam -->
@@ -81,6 +81,14 @@
       <div class="filters">
         <input type="search" id="f-search" placeholder="🔎 Buscar por nome…" autocomplete="off">
         <select id="f-genre" title="Gênero"><option value="">Todos os gêneros</option></select>
+        <select id="f-category" aria-label="Recurso"><option value="">Todos os recursos</option></select>
+        <details><summary>Tags: incluir / excluir</summary>
+          <p>Incluir exige todas as tags; excluir remove qualquer uma. Ctrl/Cmd permite seleção múltipla.</p>
+          <label>Incluir <select id="f-tags-include" multiple size="5" aria-label="Tags obrigatórias"></select></label>
+          <label>Excluir <select id="f-tags-exclude" multiple size="5" aria-label="Tags excluídas"></select></label>
+        </details>
+        <input id="f-budget" type="number" min="0" step="1" placeholder="Até R$" aria-label="Preço máximo em reais">
+        <label><input id="f-gems" type="checkbox"> Pérolas pouco conhecidas</label>
         <select id="f-discount" title="Desconto mínimo">
           <option value="0">Qualquer desconto</option>
           <option value="25">≥ 25% off</option>
@@ -97,7 +105,7 @@
         <select id="f-sort" title="Ordenar por">
           <option value="score">Ordenar: Score</option>
           <option value="discount">Maior desconto</option>
-          <option value="deal">Mais perto da baixa</option>
+          <option value="deal">Mais perto do menor observado</option>
           <option value="reviews">Mais reviews</option>
           <option value="pct">Melhor avaliação</option>
           <option value="price">Menor preço</option>
@@ -113,7 +121,7 @@
       <button type="button" class="legend-item" data-tag="new">
         <span class="sw new"></span> <b>NEW</b> — entrou hoje</button>
       <button type="button" class="legend-item" data-tag="hist">
-        <span class="sw hist"></span> <b>Baixa histórica</b></button>
+        <span class="sw hist"></span> <b>Menor observado</b></button>
       <button type="button" class="legend-item" data-tag="wish">
         <span class="sw wish"></span> <b>Na wishlist</b></button>
     </div>
@@ -169,14 +177,19 @@
   </section>
 
   <footer>
-    <b>Score 0–10</b> = qualidade × fama × bônus de desconto. Qualidade = limite inferior de
+    <b>Score 0–10</b> = 10 × qualidade × (0,60 + 0,40 × desconto) × fator histórico. Qualidade = limite inferior de
     Wilson (95%) das reviews positivas — junta "% positivas" e "nº de reviews" com confiança
     estatística (95% de 200 reviews vale menos que 95% de 200 mil). O selo de preço compara o
-    valor atual com a <b>baixa histórica</b>; favoritos e tema ficam salvos no seu navegador.
+    valor atual com o <b>menor observado BRL</b>. Desconto entra como fração de 0 a 1; o fator histórico
+    varia de 0,90 a 1,00 conforme a proximidade do menor preço, após duas datas observadas.
+    Sem histórico suficiente ele é neutro. Exigimos ao menos 100 avaliações e não aplicamos bônus de fama.
+    Favoritos, gostos e tema ficam salvos no seu navegador.
     Wishlist comparada via endpoint público da Steam (sem API key); biblioteca é opcional e usa
     uma API key só nesta requisição — nada é armazenado no servidor.
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/discovery.js"></script>
+  <script src="/static/releases.js"></script>
 </body>
 </html>

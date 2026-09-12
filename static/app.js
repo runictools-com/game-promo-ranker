@@ -16,7 +16,7 @@ let TAGS = { fav: false, new: false, hist: false, wish: false };
 let FREE_PAYLOAD = null, EPIC_PAYLOAD = null, EPIC_ONLY_CHEAPER = false, GP_PAYLOAD = null;
 
 const SCORE_CUTOFF = 7.0;
-const LS = { view: "ssr_view", theme: "ssr_theme", favs: "ssr_favs" };
+const LS = { view: "ssr_view", theme: "ssr_theme", favs: "ssr_favs", tastes: "ssr_tastes_v2" };
 
 let VIEW = "cards";                 // "cards" | "table"
 let FAVS = new Set();               // appids favoritados
@@ -45,7 +45,7 @@ function setStatus(msg, cls) {
 function priceNum(s) {
   let t = String(s || "").replace(/[^\d.,]/g, "");
   if (!t) return Infinity;
-  t = t.replace(/\./g, "").replace(",", ".");
+  t = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
   const n = parseFloat(t);
   return isNaN(n) ? Infinity : n;
 }
@@ -70,35 +70,35 @@ function allGames() {
 }
 
 // Selo de qualidade do preço (a partir de low_price_brl vs sale_price — já no JSON).
+function steamSnapshotStale() {
+  if (!PAYLOAD) return false;
+  const raw = PAYLOAD.generated_at || "";
+  const stamp = /(?:Z|[+-]\d{2}:\d{2})$/.test(raw) ? Date.parse(raw) : NaN;
+  return !Number.isFinite(stamp) || Date.now() - stamp >= 36*3600000 || stamp > Date.now()+300000;
+}
 function qualityTier(g) {
+  if (steamSnapshotStale()) return null;
   const low = priceNum(g.low_price_brl), sale = priceNum(g.sale_price);
-  if (!isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
+  const dates = new Set((g.price_history || []).map(p => p.d));
+  const known = g.score_components?.observed_price_proximity != null || dates.size >= 2;
+  if (g.low_src !== "obs" || !known || !isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
   const ratio = sale / low;
-  const pctAbove = Math.max(0, Math.round((ratio - 1) * 100));
-  const verified = g.low_src === "cs";
-  let tier, label;
-  if (g.historical_low || ratio <= 1.02) { tier = "best"; label = "MENOR PREÇO"; }
-  else if (ratio <= 1.10) { tier = "great"; label = "ÓTIMO"; }
-  else if (ratio <= 1.25) { tier = "good"; label = "BOM"; }
-  else { tier = "ok"; label = "OK"; }
-  return { tier, label, pctAbove, verified, lowStr: g.low_price_brl };
+  return { tier: sale <= low + 0.005 ? "best" : ratio <= 1.10 ? "great" : ratio <= 1.25 ? "good" : "ok",
+    label: sale <= low + 0.005 ? "MENOR OBSERVADO" : "VS. MENOR OBSERVADO",
+    atLow: sale <= low + 0.005, pctAbove: Math.max(0, Math.round((ratio-1)*100)), lowStr: g.low_price_brl,
+    since: g.low_observed_since ? String(g.low_observed_since).slice(0,10) : "período acompanhado" };
 }
-function dealPct(g) {                // p/ ordenação "mais perto da baixa"
-  const q = qualityTier(g);
-  return q ? q.pctAbove : Infinity;
-}
+function isObservedLow(g) { const q = qualityTier(g); return !!q && q.atLow; }
+function dealPct(g) { return qualityTier(g)?.pctAbove ?? Infinity; }
 function qsealHtml(g) {
   const q = qualityTier(g);
-  if (!q) return "";
-  const pct = q.pctAbove <= 1 ? "na baixa" : `+${q.pctAbove}%`;
-  const tip = q.verified ? "vs. menor preço de todos os tempos (CheapShark)"
-                         : "vs. menor preço observado (ainda não confirmado como recorde)";
-  // Quem NÃO está na baixa (OK/BOM/ÓTIMO): mostra o preço EXATO da baixa histórica
-  // ao lado, pra saber quanto o jogo já custou no menor.
-  const lowRef = (q.tier !== "best" && q.lowStr)
-    ? `<span class="qseal-low" title="menor preço de sempre${q.verified ? " (CheapShark)" : " (observado)"}">↓ ${escapeHtml(q.lowStr)}${q.verified ? "" : " ~"}</span>`
-    : "";
-  return `<span class="qseal ${q.tier}" title="${escapeHtml(tip)}">${q.label}<span class="pct">${pct}${q.verified ? "" : " ~"}</span>${lowRef}</span>`;
+  if (!q) return `<span class="muted">${steamSnapshotStale() ? "Oferta pode ter vencido: confira na Steam" : "Histórico BR insuficiente"}</span>`;
+  const tip = `Menor BRL observado desde ${q.since}; somente datas coletadas, não mínimo de todos os tempos.`;
+  return `<span class="qseal ${q.tier}" title="${escapeHtml(tip)}">${q.label}<span class="pct">+${q.pctAbove}%</span><span class="qseal-low">↓ ${escapeHtml(q.lowStr)}</span></span>`;
+}
+function scoreDetails(g) {
+  if (g.quality_score == null || g.deal_score == null) return "";
+  return `Wilson ${Number(g.quality_score).toFixed(1)} · oferta ${Number(g.deal_score).toFixed(1)} · confiança ${g.confidence === "high" ? "alta" : "moderada"}`;
 }
 
 // Steam Deck
@@ -172,7 +172,7 @@ function itemCard(g, rank, isTail) {
 
   const ribbon =
     (g.is_new ? '<span class="chip new">NEW</span>' : "") +
-    (g.historical_low ? '<span class="chip hist">★ baixa</span>' : "") +
+    (isObservedLow(g) ? '<span class="chip hist">★ menor observado</span>' : "") +
     (wished ? '<span class="chip wish">wishlist</span>' : "");
 
   const tags = (g.tags || g.genres || []).slice(0, 3)
@@ -180,8 +180,8 @@ function itemCard(g, rank, isTail) {
   const cover = headerImg(g);
   const coverImg = cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy">` : "";
   const spark = sparkline(g.price_history);
-  const lowLine = g.low_price_brl
-    ? `<span class="spark-lo">baixa: <b>${escapeHtml(g.low_price_brl)}</b></span>` : "";
+  const lowLine = qualityTier(g) && g.low_price_brl
+    ? `<span class="spark-lo">observado: <b>${escapeHtml(g.low_price_brl)}</b></span>` : "";
 
   return `
     <div class="${cls.join(" ")}" data-appid="${escapeHtml(appid)}">
@@ -203,6 +203,7 @@ function itemCard(g, rank, isTail) {
         ${qsealHtml(g)}
         ${(spark || lowLine) ? `<div class="spark-row">${spark}${lowLine}</div>` : ""}
         ${storeBestHtml(g)}
+        <div class="meta-row" title="${escapeHtml(g.score_rationale || "")}">${escapeHtml(scoreDetails(g))}</div>
         <div class="card-foot">${gaugeHtml(g.score)}</div>
       </div>
     </div>`;
@@ -218,13 +219,13 @@ function itemRow(g, rank, isTail) {
   const trCls = [];
   if (isTail) trCls.push("tail-row");
   if (g.is_new) trCls.push("new-row");
-  if (g.historical_low) trCls.push("hist-low");
+  if (isObservedLow(g)) trCls.push("hist-low");
   if (isFav) trCls.push("faved");
   if (wished) trCls.push("wishlisted");
 
   const badges =
     (g.is_new ? '<span class="badge-inline new">NEW</span>' : "") +
-    (g.historical_low ? '<span class="badge-inline hist">BAIXA</span>' : "") +
+    (isObservedLow(g) ? '<span class="badge-inline hist">OBSERVADO</span>' : "") +
     (wished ? '<span class="badge-inline wish">WISH</span>' : "");
   const img = g.img_url ? `<img src="${escapeHtml(g.img_url)}" alt="" loading="lazy">` : "";
   const deck = deckPill(g, false);
@@ -242,7 +243,7 @@ function itemRow(g, rank, isTail) {
       <td class="orig">${escapeHtml(g.orig_price || "")}</td>
       <td class="sale">${escapeHtml(g.sale_price || "")}</td>
       <td class="low-ever">${lowCell}</td>
-      <td class="score-cell"><span class="sc-wrap">${gaugeHtml(g.score)}</span></td>
+      <td class="score-cell" title="${escapeHtml(scoreDetails(g))}"><span class="sc-wrap">${gaugeHtml(g.score)}</span></td>
     </tr>`;
 }
 
@@ -256,7 +257,7 @@ function tableHead(sort) {
     <th class="col-reviews ${cls("reviews")}" data-sort="reviews">Reviews ${arrow("reviews")}</th>
     <th class="col-orig">Original</th>
     <th class="${cls("price")}" data-sort="price">Promo ${arrow("price")}</th>
-    <th class="${cls("deal")}" data-sort="deal">vs. baixa ${arrow("deal")}</th>
+    <th class="${cls("deal")}" data-sort="deal">vs. observado ${arrow("deal")}</th>
     <th class="${cls("score")}" data-sort="score">Score ${arrow("score")}</th>
   </tr></thead>`;
 }
@@ -306,7 +307,10 @@ function flatContainer(items, label, sort) {
 function filterState() {
   return {
     q: (((el("f-search") || {}).value) || "").trim().toLowerCase(),
-    genre: ((el("f-genre") || {}).value) || "",
+    genre: el("f-genre")?.value || "",
+    includeTags: selectedValues("f-tags-include"), excludeTags: selectedValues("f-tags-exclude"),
+    category: el("f-category")?.value || "", budget: Number(el("f-budget")?.value || 0),
+    gems: !!el("f-gems")?.checked,
     minDisc: Number(((el("f-discount") || {}).value) || 0),
     minPct: Number(((el("f-review") || {}).value) || 0),
     sort: ((el("f-sort") || {}).value) || "score",
@@ -314,20 +318,25 @@ function filterState() {
   };
 }
 function filtersActive(f) {
-  return !!f.q || !!f.genre || f.minDisc > 0 || f.minPct > 0 || f.sort !== "score" ||
+  return f.includeTags.length > 0 || f.excludeTags.length > 0 || !!f.category || f.budget > 0 || f.gems || !!f.q || !!f.genre || f.minDisc > 0 || f.minPct > 0 || f.sort !== "score" ||
     f.tagFav || f.tagNew || f.tagHist || f.tagWish;
 }
 function passesFilter(g, f) {
   if (f.q && !String(g.name || "").toLowerCase().includes(f.q)) return false;
   if (f.genre) {
-    const pool = [].concat(g.genres || [], g.tags || []).map((x) => String(x).toLowerCase());
+    const pool = (g.genres || []).map((x) => String(x).toLowerCase());
     if (!pool.includes(f.genre.toLowerCase())) return false;
   }
+  const gameTags = new Set(g.tags || []);
+  if (f.includeTags.some(t => !gameTags.has(t)) || f.excludeTags.some(t => gameTags.has(t))) return false;
+  if (f.category && !(g.categories || []).includes(f.category)) return false;
+  if (f.budget > 0 && priceNum(g.sale_price) > f.budget) return false;
+  if (f.gems && !g.hidden_gem) return false;
   if (f.minDisc && Number(g.discount) < f.minDisc) return false;
   if (f.minPct && Number(g.pct_positive) < f.minPct) return false;
   if (f.tagFav && !FAVS.has(String(g.appid))) return false;
   if (f.tagNew && !g.is_new) return false;
-  if (f.tagHist && !g.historical_low) return false;
+  if (f.tagHist && !isObservedLow(g)) return false;
   if (f.tagWish && !(COMPARE_ACTIVE && WISHLIST.has(Number(g.appid)))) return false;
   return true;
 }
@@ -335,7 +344,7 @@ function flatLabel(f) {
   const onlyTag = !f.q && !f.genre && !f.minDisc && !f.minPct;
   const tags = [f.tagFav && "fav", f.tagNew && "new", f.tagHist && "hist", f.tagWish && "wish"].filter(Boolean);
   if (onlyTag && tags.length === 1)
-    return { fav: "★ Seus favoritos", new: "Novidades de hoje", hist: "Baixas históricas", wish: "Sua wishlist em promoção" }[tags[0]];
+    return { fav: "★ Seus favoritos", new: "Novidades de hoje", hist: "Menores preços observados", wish: "Sua wishlist em promoção" }[tags[0]];
   return "Resultado dos filtros";
 }
 function sortGames(arr, sort) {
@@ -359,21 +368,10 @@ function renderGames() {
   const fc = el("f-clear");
   if (fc) fc.classList.toggle("hidden", !active);
 
-  if (active) {
-    let items = allGames().filter(({ g }) => {
-      if (COMPARE_ACTIVE && OWNED.has(Number(g.appid))) return false;
-      return passesFilter(g, f);
-    });
-    sortGames(items, f.sort);
-    root.innerHTML = flatContainer(items, flatLabel(f), f.sort) ||
-      '<div class="empty-tier">Nenhum jogo com esses filtros.</div>';
-    wireDynamic();
-    return;
-  }
-
-  let html = "";
-  for (const block of (PAYLOAD.blocks || [])) html += blockContainer(block, f.sort);
-  root.innerHTML = html || '<div class="empty-tier">Nenhum jogo a exibir.</div>';
+  const items = allGames().filter(({ g }) => !(COMPARE_ACTIVE && OWNED.has(Number(g.appid))) && passesFilter(g, f));
+  sortGames(items, f.sort);
+  root.innerHTML = flatContainer(items, active ? flatLabel(f) : "Ranking geral de oportunidades", f.sort) ||
+    '<div class="empty-tier">Nenhum jogo com esses filtros.</div>';
   wireDynamic();
 }
 
@@ -398,24 +396,28 @@ function toggleTail(e) {
 // ─── Hero: stats ao vivo + gênero ───────────────────────────────────────────
 function renderSubtitle() {
   if (!PAYLOAD) return;
-  const when = PAYLOAD.generated_at_human || PAYLOAD.generated_at || "—";
+  const stamp = new Date(PAYLOAD.generated_at);
+  const when = Number.isNaN(stamp.getTime()) ? "data não informada" : stamp.toLocaleString("pt-BR", {timeZone:"America/Sao_Paulo"});
   const total = PAYLOAD.total_collected != null ? PAYLOAD.total_collected : "—";
-  el("subtitle").textContent = `Atualizado em ${when} · ${total} jogos rankeados`;
+  const coverage = PAYLOAD.coverage;
+  el("subtitle").textContent = `Atualizado em ${when} · ${total} jogos rankeados` +
+    (coverage ? ` · amostra de ${coverage.pages_scanned || 0} páginas, não catálogo completo` : "") +
+    (steamSnapshotStale() ? " · DADOS VENCIDOS: ofertas podem ter terminado. Confira preço e disponibilidade na Steam." : "");
 }
 function renderStats() {
   if (!PAYLOAD) return;
   const games = allGames().map((x) => x.g);
   const total = PAYLOAD.total_collected ?? games.length;
-  const histLow = games.filter((g) => g.historical_low).length;
+  const histLow = games.filter((g) => isObservedLow(g)).length;
   const favOnSale = games.filter((g) => FAVS.has(String(g.appid)));
-  const favLow = favOnSale.filter((g) => g.historical_low).length;
+  const favLow = favOnSale.filter((g) => isObservedLow(g)).length;
   let best = games[0] || null;
   for (const g of games) if (!best || g.score > best.score) best = g;
 
   const tiles = [
     { cls: "", k: total, l: "jogos rankeados" },
-    { cls: "is-gold", k: histLow, l: "na <b>baixa histórica</b>" },
-    { cls: "is-violet clickable", k: FAVS.size, l: favLow ? `favoritos · <b>${favLow} na baixa!</b>` : "favoritos salvos", act: "fav" },
+    { cls: "is-gold", k: histLow, l: "no <b>menor observado</b>" },
+    { cls: "is-violet clickable", k: FAVS.size, l: favLow ? `favoritos · <b>${favLow} no menor observado</b>` : "favoritos salvos", act: "fav" },
     { cls: "is-green", k: best ? best.score.toFixed(1) : "—", l: best ? `melhor: <b>${escapeHtml(best.name.slice(0, 22))}</b>` : "melhor score" },
   ];
   el("stat-strip").innerHTML = tiles.map((t) =>
@@ -424,16 +426,28 @@ function renderStats() {
   el("stat-strip").querySelectorAll("[data-act='fav']").forEach((n) =>
     n.addEventListener("click", () => toggleTag("fav")));
 }
+function selectedValues(id) { return Array.from(el(id)?.selectedOptions || [], o => o.value); }
+function savedTastes() { try { return JSON.parse(lsGet(LS.tastes, "{}")) || {}; } catch { return {}; } }
+function saveTastes() {
+  const f = filterState();
+  lsSet(LS.tastes, JSON.stringify({genre:f.genre, category:f.category, includeTags:f.includeTags,
+    excludeTags:f.excludeTags, budget:f.budget, gems:f.gems}));
+}
 function populateGenres() {
-  const sel = el("f-genre");
-  if (!sel) return;
-  const set = new Set();
-  for (const { g } of allGames()) for (const x of (g.genres || [])) set.add(x);
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Todos os gêneros</option>' +
-    [...set].sort().map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
-  if (cur) sel.value = cur;
-  sel.classList.toggle("hidden", set.size === 0);
+  const tastes = savedTastes();
+  for (const [id, field, key, label] of [["f-genre","genres","genre","Todos os gêneros"],
+    ["f-category","categories","category","Todos os recursos"],
+    ["f-tags-include","tags","includeTags",null], ["f-tags-exclude","tags","excludeTags",null]]) {
+    const node = el(id); if (!node) continue;
+    const saved = tastes[key] || (label ? "" : []);
+    const choices = new Set(allGames().flatMap(({g}) => g[field] || []));
+    for (const v of (Array.isArray(saved) ? saved : [saved])) if(v) choices.add(v);
+    node.innerHTML = (label ? `<option value="">${label}</option>` : "") +
+      [...choices].sort((a,b)=>a.localeCompare(b)).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
+    for (const option of node.options) option.selected = Array.isArray(saved) ? saved.includes(option.value) : option.value === saved;
+  }
+  if(el("f-budget")) el("f-budget").value = tastes.budget || "";
+  if(el("f-gems")) el("f-gems").checked = !!tastes.gems;
 }
 
 // ─── Favoritos ──────────────────────────────────────────────────────────────
@@ -490,6 +504,11 @@ function clearFilters() {
   if (el("f-discount")) el("f-discount").value = "0";
   if (el("f-review")) el("f-review").value = "0";
   if (el("f-sort")) el("f-sort").value = "score";
+  for(const id of ["f-tags-include","f-tags-exclude"]) for(const o of el(id)?.options || []) o.selected=false;
+  if(el("f-category")) el("f-category").value="";
+  if(el("f-budget")) el("f-budget").value="";
+  if(el("f-gems")) el("f-gems").checked=false;
+  saveTastes();
   TAGS.fav = TAGS.new = TAGS.hist = TAGS.wish = false;
   syncTagUI(); renderGames();
 }
@@ -727,9 +746,9 @@ document.addEventListener("DOMContentLoaded", () => {
   el("profile-input").addEventListener("keydown", (e) => { if (e.key === "Enter") compareProfile(); });
 
   setupTabs();
-  ["f-search", "f-genre", "f-discount", "f-review", "f-sort"].forEach((id) => {
+  ["f-search", "f-genre", "f-discount", "f-review", "f-sort", "f-tags-include", "f-tags-exclude", "f-category", "f-budget", "f-gems"].forEach((id) => {
     const node = el(id);
-    if (node) node.addEventListener(id === "f-search" ? "input" : "change", renderGames);
+    if (node) node.addEventListener(id === "f-search" ? "input" : "change", () => { saveTastes(); renderGames(); });
   });
   if (el("f-clear")) el("f-clear").addEventListener("click", clearFilters);
   document.querySelectorAll(".legend .legend-item").forEach((n) => n.addEventListener("click", () => toggleTag(n.dataset.tag)));

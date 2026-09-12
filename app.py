@@ -22,6 +22,8 @@ Tudo é same-origin (front + API no mesmo host) → sem CORS.
 
 import os
 import re
+import json
+from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
 
 import requests
@@ -48,6 +50,8 @@ GAMEPASS_FILE = os.environ.get(
     "GAMEPASS_FILE", os.path.join(BASE_DIR, "data", "gamepass.json")
 )
 HTTP_TIMEOUT = 10  # segundos — todos os fetches externos
+DISCOVERY_FILE = os.environ.get("DISCOVERY_FILE", os.path.join(BASE_DIR, "data", "discovery.json"))
+RELEASES_FILE = os.environ.get("RELEASES_FILE", os.path.join(BASE_DIR, "data", "releases.json"))
 
 # Headers de browser (a Steam bloqueia/limita user-agents "robôs").
 BROWSER_HEADERS = {
@@ -142,6 +146,64 @@ def api_gamepass():
 # ─── /api/steam-user ──────────────────────────────────────────────────────────
 
 # Aceita: URL completa, ".../id/<vanity>", ".../profiles/<steamid64>", ou só o vanity.
+@app.route("/api/releases")
+def api_releases():
+    try:
+        with open(RELEASES_FILE, encoding="utf-8") as stream:
+            data = json.load(stream)
+        if not isinstance(data, dict) or not isinstance(data.get("releases"), list):
+            raise ValueError("invalid snapshot")
+    except (OSError, ValueError):
+        return jsonify(ok=False, error="Calendário ainda sem dados verificados.", releases=[]), 503
+    try:
+        until = datetime.fromisoformat(data["valid_until"].replace("Z", "+00:00"))
+        data["stale"] = bool(data.get("stale")) or until.tzinfo is None or until < datetime.now(timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        data["stale"] = True
+    response = jsonify(data)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/discovery")
+def api_discovery():
+    """Serve discovery snapshots without renewing the collection timestamp."""
+    try:
+        with open(DISCOVERY_FILE, encoding="utf-8") as stream:
+            data = json.load(stream)
+        if not isinstance(data, dict):
+            raise ValueError("invalid snapshot")
+    except (OSError, ValueError):
+        return jsonify(ok=False, error="Radar ainda sem dados verificados.",
+                       campaigns=[], events=[], indie_games=[], sources=[]), 503
+    now = datetime.now(timezone.utc)
+    def expired(value, date_end=False, state=""):
+        try:
+            value = str(value)
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if len(value) == 10 and date_end:
+                offset = -5 if state == "AC" else -4 if state in {"AM", "RR", "RO", "MT", "MS"} else -3
+                stamp = stamp.replace(hour=23, minute=59, second=59, microsecond=999999,
+                                      tzinfo=timezone(timedelta(hours=offset)))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            return stamp < now
+        except (TypeError, ValueError):
+            return True
+    stale = expired(data.get("valid_until"))
+    data["stale"] = stale
+    data["campaigns"] = [c for c in data.get("campaigns", [])
+                         if not stale and not expired(c.get("valid_until"))
+                         and not expired(c.get("end_date"), date_end=True)]
+    data["events"] = [{**e, "stale": expired(e.get("valid_until"), date_end=True, state=e.get("state", ""))}
+                      for e in data.get("events", []) if not expired(e.get("end_date"), date_end=True, state=e.get("state", ""))]
+    data["indie_games"] = [] if stale else [g for g in data.get("indie_games", [])
+                                           if not expired(g.get("valid_until"))]
+    response = jsonify(data)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 _RE_ID       = re.compile(r"steamcommunity\.com/id/([^/?#]+)", re.IGNORECASE)
 _RE_PROFILES = re.compile(r"steamcommunity\.com/profiles/(\d+)", re.IGNORECASE)
 _RE_STEAMID  = re.compile(r"^\d{17}$")

@@ -4,3 +4,5 @@ __pycache__/
 steam_sale_ranker.html
 data/
 _prev_appids.json
+preview-v2/
+output/

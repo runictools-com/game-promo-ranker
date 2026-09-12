@@ -1,215 +1,89 @@
-<div align="center">
+# Game Promo Ranker
 
-# 🎮 Game Promo Ranker
+Aplicação Python/Flask para descobrir promoções Steam, campanhas de financiamento e eventos de jogos no Brasil.
 
-**Encontra as melhores promoções de jogos por qualidade real — não só pelo tamanho do desconto.**
+- Aplicação: https://gamepromo.runictools.com/
+- Repositório: https://github.com/runictools-com/game-promo-ranker
 
-Um ranker que combina avaliação dos jogadores, popularidade e desconto num **score de 0 a 10**,
-compara com a **sua wishlist**, cruza preços entre lojas (Steam · Epic · GOG · Fanatical)
-e ainda rastreia os **jogos grátis da Epic** e o catálogo do **Game Pass**.
+## Promoções Steam
 
-[**▶ Demo ao vivo**](https://gamepromo.eep0x10.tech) · feito em Python + Flask, atualizado 1×/dia
+O ranking global usa avaliações e oportunidade de preço, sem bônus de fama:
 
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-gunicorn-000000?logo=flask&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-![Sem API key](https://img.shields.io/badge/wishlist-sem%20API%20key-4fd06a)
-
-</div>
-
----
-
-## ✨ O que faz
-
-- 🏆 **Ranking por qualidade real** — score 0–10 que pondera *quão boas são as reviews*, *quantas são* e *quanto está de desconto*. Um jogo nota 9 com 500 mil reviews vale mais que um "95%" com 60 reviews.
-- 🎨 **Interface em cards ou tabela** — alterne entre uma **grade visual** (capa, gauge de score colorido, sparkline de preço) e a **tabela densa** pra quem quer varrer tudo. A escolha fica salva no navegador.
-- 🌗 **Tema claro/escuro** — botão no topo, também persistido localmente.
-- 📊 **Hero com stats ao vivo** — total rankeado, quantos estão na baixa histórica, favoritos (e quantos deles em baixa!) e o melhor score do dia.
-- 💰 **"Esse preço é bom mesmo?"** — cada jogo ganha um selo (**MENOR PREÇO / ÓTIMO / BOM / OK**) e o **% acima da baixa histórica**, então dá pra ver na hora se vale comprar agora ou esperar.
-- ⭐ **Favoritos (sem login)** — favorite jogos (salvos no navegador) e filtre só por eles; o app avisa quando um favorito bate a **baixa histórica**.
-- 🎮 **Steam Deck + gênero** — badge de compatibilidade com o Deck (Verificado/Jogável/Não suportado) e **filtro por gênero**.
-- 🏬 **Comparação multi-loja** — quando **GOG, Fanatical, Epic** (etc.) estão mais baratos que a Steam, aparece a **melhor loja** com o % de economia (via CheapShark).
-- 🎯 **Mostra só a nata** — por padrão exibe os jogos **score 7–10**; o resto fica num *"Ver mais"* ao fim de cada bloco de avaliação.
-- 🔎 **Filtros e busca** — por nome, gênero, desconto mínimo, avaliação mínima, e ordenação (score, maior desconto, **mais perto da baixa**, mais reviews, melhor avaliação, menor preço).
-- 🏷️ **Legenda clicável** — clique em **Favoritos**, **NEW**, **Baixa histórica** ou **Wishlist** pra filtrar só aqueles jogos.
-- ❤️ **Compara com a sua wishlist** — cole o link do seu perfil Steam e os jogos da sua lista de desejos em promoção ficam grifados. **Sem precisar de API key.**
-- 🟡 **Baixa histórica** — destaca os jogos no **menor preço de todos os tempos** (via CheapShark).
-- 🟢 **NEW** — destaca o que **entrou em promoção hoje** (compara com a geração de ontem).
-- 🎁 **Aba de jogos grátis** — os *gratuitos pra resgatar e ficar* da **Epic Games Store**, com "grátis agora", "em breve" e **histórico** do que já passou.
-
----
-
-## 🧮 Como o score funciona
-
-```
-score (0–10) = 10 × qualidade × (0.75 + 0.25·fama) × (0.80 + 0.20·desconto)
+```text
+score = 10 × Wilson95 × (0.60 + 0.40 × desconto) × fator_histórico
 ```
 
-| Fator | O que é | Por quê |
-|---|---|---|
-| **qualidade** | Limite inferior de **Wilson 95%** da proporção de reviews positivas | Junta *% positivas* **e** *nº de reviews* num número só, com confiança estatística. 95% de 200 reviews vale **menos** que 95% de 200 mil — resolve o hype de baixa amostragem. É o **núcleo** do score. |
-| **fama** | `log10(reviews)` saturando perto de 100k | Popularidade conta, mas como **modificador suave** (×0.75–1.0): não domina nem zera um bom jogo. |
-| **desconto** | `% de desconto` | Outro modificador suave (×0.80–1.0): bom negócio sobe, mas qualidade vem primeiro. |
+`Wilson95` é o limite inferior de confiança da proporção de avaliações positivas. O número de avaliações entra nessa confiança, sem um segundo multiplicador de popularidade. Isso reduz o peso de amostras pequenas; não mede qualidade absoluta nem elimina manipulação de reviews. Entram jogos com pelo menos **100 avaliações** e **15% de desconto**.
 
-**Calibração** (exemplos reais da fórmula):
+O desconto usa uma fração entre 0 e 1. Quando existem pelo menos duas datas de preço BRL observado, o fator histórico é `0.90 + 0.10 × min(1, menor_observado / preço_atual)`. Sem histórico suficiente, o fator é neutro: `1`. Qualidade Wilson, oferta e componentes ficam separados no JSON.
 
-| Jogo | Reviews | Desconto | Score |
-|---|---:|---:|---:|
-| Joia AAA · 97% positivas · 500k reviews | 500 000 | 70% | **9.1** |
-| Nicho excelente · 95% · 800 reviews | 800 | 75% | **7.9** |
-| Muito positivo · 88% · 20k reviews | 20 000 | 50% | **7.6** |
-| Hype · 95% mas **só 60 reviews** | 60 | 80% | **7.0** ⬅ confiança puxa pra baixo |
-| Mediano · 70% · 2k reviews | 2 000 | 80% | **6.0** |
-| Fraco · 50% · 200 reviews | 200 | 90% | **3.7** |
+A coleta consulta Steam Brasil em quatro ordenações: avaliações, desconto, lançamentos e relevância. É uma amostra paginada, não todo o catálogo; o JSON informa estratégias, páginas e cobertura. Produtos `/sub/` e bundles são rejeitados para não misturar preço de edição com avaliações do jogo base. Hentai e o descritor de conteúdo sexual adulto explícito são excluídos; conteúdo mature geral e nudez não são bloqueados indiscriminadamente.
 
-Os jogos são agrupados pelos **blocos oficiais de avaliação da Steam**:
+Cards e tabela preservam o ranking global. Há busca por nome, gênero, recurso/categoria, tags da comunidade para incluir todas ou excluir qualquer uma, orçamento, desconto, avaliação e pérolas pouco conhecidas. Estas últimas exigem 100–4.999 avaliações e Wilson de pelo menos 0,85. Gostos, favoritos, tema e modo de exibição ficam no navegador. Gêneros, categorias e compatibilidade Steam Deck têm cache com validade de 30 dias e cobertura explícita.
 
-| Bloco | Critério |
-|---|---|
-| Overwhelmingly Positive | ≥ 95% com 500+ reviews |
-| Very Positive | 80–94% com 500+ reviews |
-| Mostly Positive | 70–79% |
-| Mixed | 40–69% |
-| Mostly Negative | 20–39% |
-| Overwhelmingly Negative | < 20% com 500+ reviews |
+### Histórico de preço
 
-> Só entram jogos com **≥ 2.000 reviews** e **≥ 15% de desconto** (ignora obscuros e promoções irrelevantes).
+O histórico novo é exclusivamente **observado na Steam Brasil em BRL**, em `observed_lows_br_app_v2.json` e `price_series_br_app_v2.json` (até 365 pontos). A primeira observação não recebe selo de recorde. Uma comparação só aparece com pelo menos duas datas conhecidas; não representa a mínima de todos os tempos. A série acompanha os preços coletados, sem garantir observação diária de cada jogo.
 
----
+Valores antigos derivados de USD/CheapShark não são reutilizados como preços regionais. Não há conversão sintética nem comparação multi-loja baseada nesses valores. A aba Epic só compara valores BRL compatíveis com dados Steam recentes e títulos correspondentes.
 
-## ❤️ Comparação com o perfil Steam
+Falha ou coleta Steam vazia preserva o snapshot anterior e retorna erro ao orquestrador. Após 36 horas, a interface avisa que as ofertas podem ter vencido e retira os selos de preço. `NEW` significa novo na amostra em relação à geração anterior, não prova de início da promoção.
 
-Cole a URL do seu perfil (`steamcommunity.com/id/...`, `/profiles/...` ou só o nome) e a app:
+## Radar e agenda
 
-- **Wishlist** → busca via `IWishlistService/GetWishlist/v1` (endpoint público, **sem API key**) e grifa em azul os seus desejados que estão em promoção.
-- **Jogos que você já tem** *(opcional)* → como a Steam fechou o acesso anônimo à biblioteca em 2024, remover os que você já possui precisa de uma **API key opcional** (`IPlayerService/GetOwnedGames`). Sem a key, a comparação de wishlist funciona normalmente.
+A aba de financiamento coleta amostras públicas de Meeplestarter, Gamefound e Kickstarter. Catarse aparece como diretório para consulta manual. Uma campanha precisa estar ativa, ter atingido a meta e reunir pelo menos 100 apoiadores no Brasil ou 300 internacionalmente. O score privilegia a quantidade de apoiadores e limita o efeito de metas simbólicas. Tração não comprova qualidade do jogo nem entrega futura. Frete, impostos, idioma e atendimento ao Brasil precisam ser conferidos na campanha.
 
-> 🔒 **Privacidade:** nada é armazenado no servidor. O perfil é consultado server-side só naquela requisição (evita CORS) e a API key, se informada, é usada só ali e descartada.
+O radar também separa jogos disponíveis do itch.io com avaliações suficientes; não os apresenta como campanhas. Fontes bloqueadas ou sem dados verificáveis aparecem com sua limitação. Campanhas e indies vencidos são ocultados até nova coleta.
 
----
+A agenda combina eventos datados de curadoria com calendário público estruturado, mantendo fonte e validade. É possível filtrar estado, cidade, assunto e período. Datas sem hora respeitam o fim do dia brasileiro; informações antigas são sinalizadas. A cobertura é parcial: lista vazia não significa ausência de eventos na região.
 
-## 🎁 Jogos grátis (Epic)
+## Lançamentos Steam
 
-Lê o feed público `freeGamesPromotions` da Epic (sem API key, preço/locale BR) e separa:
+A aba consulta três listas: próximos por data, próximos populares e lançados recentemente. São até seis páginas de 100 resultados por lista, com deduplicação e cobertura informada. Datas vagas, como trimestre ou “em breve”, continuam imprecisas; não recebem dia inventado. A popularidade da lista de origem não é uma nota de qualidade para um jogo ainda não lançado.
 
-- **Grátis agora** — só os realmente *100% off* (descarta as promos pagas que a Epic mistura no mesmo feed).
-- **Em breve** — os já anunciados pra próxima rotação.
-- **Histórico** — log **append-only** de tudo que já ficou grátis (com data de quando apareceu).
+Também permanecem as abas de jogos grátis, promoções Epic e catálogo Game Pass, sujeitas à disponibilidade de suas fontes.
 
-> PSN e Prime ficam de fora: não há fonte pública estável (os alvos bloqueiam bots e os títulos do PS Plus exigem assinatura).
+## Perfil e privacidade
 
----
+A consulta de wishlist pública não exige API key. Remover jogos já possuídos usa uma chave Steam opcional. O código da aplicação usa a chave somente na requisição e não a persiste; não salve URLs com chave nem as compartilhe. Favoritos e preferências são locais ao navegador, sem sincronização entre dispositivos. Perfis privados e restrições da Steam podem impedir a consulta.
 
-## 🏗️ Arquitetura
-
-```mermaid
-flowchart LR
-    subgraph cron["Cron diário"]
-        G1["steam_sale_ranker.py --json<br/>(Steam Search + CheapShark)"]
-        G2["free_games.py --json<br/>(Epic freeGamesPromotions)"]
-    end
-    G1 -->|games.json| V[("volume<br/>steam_data")]
-    G2 -->|free_games.json| V
-    V --> A["app.py (Flask + gunicorn)"]
-    A -->|"/api/games · /api/free-games<br/>/api/steam-user"| B["static/ (front: tabs, filtros, cards)"]
-    B --> U(["🧑 Browser"])
-    U -.->|perfil| A
-    A -.->|"wishlist / owned"| S["Steam Web API"]
-```
-
-O gerador roda em **2 fases**: publica a lista na hora (fase 1) e depois enriquece com baixa histórica via CheapShark (fase 2, mais lenta), republicando. A app Flask só serve os JSONs + o frontend estático e faz o proxy do perfil Steam.
-
----
-
-## 🚀 Rodando localmente
-
-### CLI (só o gerador, no terminal)
+## Executar e atualizar
 
 ```bash
-pip install -r requirements.txt
-
-python steam_sale_ranker.py 12 --json data/games.json   # gera o JSON da lista
-python free_games.py --json data/free_games.json         # gera os grátis da Epic
-python steam_sale_ranker.py 12                           # tabela colorida no terminal
+python -m pip install -r requirements.txt
+python refresh_daily.py --pages 20 --data-dir data
+python app.py
 ```
 
-### App completa (Docker)
+`refresh_daily.py` executa independentemente os coletores Steam, radar, lançamentos, grátis, Epic e Game Pass. Registra resultados em `data/refresh_status.json`; uma falha não interrompe as demais fontes, mas faz a execução terminar com erro. Agende esse comando diariamente no ambiente de execução. Flask serve os arquivos gerados; não busca todo o catálogo a cada visita.
+
+Para atualizar somente Steam:
 
 ```bash
-# 1) app web (serve front + APIs na porta 8000)
-docker build -t steam-sale-app .
-docker run -d --name gamepromo -p 8000:8000 -v steam_data:/app/data steam-sale-app
-
-# 2) gerador (imagem única com os dois scripts)
-docker build -f Dockerfile.gen -t steam-gen .
-docker run --rm -v steam_data:/app/data steam-gen 12 --json data/games.json
-docker run --rm --entrypoint python -v steam_data:/app/data steam-gen \
-    free_games.py --json data/free_games.json
+python steam_sale_ranker.py 20 --json data/games.json
 ```
 
-Abra **http://localhost:8000**. (Sem `games.json` ainda, a lista mostra um aviso até o gerador rodar.)
+## Validação e publicação
 
----
+No ambiente Windows configurado, o caminho de entrega é:
 
-## 🌐 Deploy em produção
-
-Pensado pra rodar atrás de um **nginx-proxy** (rede Docker), com a app e o gerador compartilhando o volume `steam_data`:
-
-```yaml
-# docker-compose.prod.yml (resumido)
-services:
-  gamepromo:
-    build: .
-    environment:
-      - VIRTUAL_HOST=gamepromo.seu-dominio
-      - VIRTUAL_PORT=8000
-    volumes: [steam_data:/app/data]
-    networks: [web]
+```powershell
+./deploy/ship.ps1 -NoDeploy  # testes, sintaxe JavaScript e diff
+./deploy/ship.ps1            # exige alterações revisadas e commitadas
 ```
 
-Os dados são atualizados por **cron** (uma imagem `steam-gen` serve os dois jobs):
+A entrega completa executa testes, preflight de produção, push, build da aplicação e do gerador, atualização dos coletores e verificações de saúde/revisão. O volume `steam_data` mantém os snapshots. O script preserva imagens identificadas para rollback e não remove volumes. A existência deste procedimento não indica que uma publicação já tenha ocorrido.
 
-```cron
-0 3 * * *  docker run --rm -v steam_data:/app/data steam-gen 12 --json data/games.json
-0 4 * * *  docker run --rm --entrypoint python -v steam_data:/app/data steam-gen free_games.py --json data/free_games.json
-```
+## Rotas
 
----
-
-## 🔌 Endpoints da API
-
-| Rota | Descrição |
+| Rota | Conteúdo |
 |---|---|
-| `GET /` | Frontend (abas Promoções / Grátis) |
-| `GET /api/games` | JSON da lista rankeada (gerado pelo cron) |
-| `GET /api/free-games` | Jogos grátis: `current` / `upcoming` / `history` |
-| `GET /api/steam-user?profile=<url>&key=<opcional>` | Resolve o perfil e devolve `wishlist` + `owned` |
-| `GET /healthz` | Healthcheck |
-
----
-
-## 📦 Configuração
-
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `DATA_FILE` | `data/games.json` | Caminho do JSON da lista |
-| `FREE_FILE` | `data/free_games.json` | Caminho do JSON dos grátis |
-| `EPIC_FILE` | `data/epic_games.json` | Caminho do JSON das promoções Epic |
-| `GAMEPASS_FILE` | `data/gamepass.json` | Caminho do JSON do Game Pass |
-| `PORT` (via gunicorn) | `8000` | Porta da app |
-
-Constantes do gerador (em `steam_sale_ranker.py`): `MIN_REVIEWS=2000`, `MIN_DISCOUNT=15`, `COUNT_PER_PAGE=50`, `SEED_BATCH=120` (baixa/loja CheapShark por run), `META_BATCH=80` (gênero/Deck via appdetails por run).
-
-Caches persistentes (no volume `data/`, ao lado do `games.json`): `historical_lows.json` (baixa + multi-loja), `meta_cache.json` (gênero/tags/Deck) e `price_series.json` (histórico de preço, 1 ponto/dia). Todos enchem incrementalmente e são resumíveis — um timeout no meio não perde progresso.
-
----
-
-## 🙏 Fontes de dados
-
-- **Steam Store Search API** — jogos em promoção e contagem de reviews
-- **Steam appdetails** + relatório de compat. do Deck — gênero, tags e Steam Deck
-- **CheapShark API** — menor preço histórico **e** preços multi-loja (GOG/Fanatical/Epic…), rate limit respeitado (2 req/s)
-- **Steam Web API** (`IWishlistService` / `IPlayerService`) — wishlist e biblioteca
-- **Epic Games** (`freeGamesPromotions`) — jogos grátis
-
-Projeto pessoal, sem fins comerciais. Marcas e dados pertencem aos seus respectivos donos.
+| `GET /` | Aplicação |
+| `GET /api/games` | Promoções Steam e componentes do ranking |
+| `GET /api/discovery` | Campanhas, indies, eventos e cobertura |
+| `GET /api/releases` | Lançamentos Steam |
+| `GET /api/free-games` | Grátis atuais, próximos e histórico |
+| `GET /api/epic-games` | Promoções Epic |
+| `GET /api/gamepass` | Catálogo Game Pass |
+| `GET /api/steam-user?profile=...&key=...` | Wishlist e biblioteca; chave opcional |
+| `GET /healthz` | Saúde da aplicação |

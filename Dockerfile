@@ -19,6 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py favicon.svg ./
 COPY static/ ./static/
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+
 # Diretório do JSON (montado como volume em produção; o cron escreve aqui)
 RUN mkdir -p /app/data
 

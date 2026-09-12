@@ -11,14 +11,10 @@ Game Promo Ranker
 =================
 Lista jogos em promoção na Steam ordenados por score composto.
 
-Fórmula (score normalizado 0–10):
-  score = 10 × qualidade × (0.75 + 0.25·fama) × (0.80 + 0.20·desconto)
-
-  - qualidade : limite inferior de Wilson 95% das reviews positivas — junta
-                "% positivas" + "nº de reviews" com confiança estatística
-                (95% de 200 vale menos que 95% de 200k). Núcleo do score.
-  - fama      : log10(reviews) saturando ~100k → modificador suave ×0.75–1.0
-  - desconto  : % de desconto → modificador ×0.80–1.0
+Fórmula v2 (0–10): 10 × Wilson 95% × (0.60 + 0.40 × desconto) × fator histórico.
+Fator histórico 0.90–1.00 após duas datas BRL; neutro (1) enquanto insuficiente.
+Sem multiplicador de fama: tamanho da amostra entra apenas na confiança.
+Mínimo de 100 avaliações; preços regionais BRL; baixa apenas observada no Brasil.
 
 Blocos seguem a classificação oficial da Steam:
   Overwhelmingly Positive : 95%+  (500+ reviews)
@@ -42,9 +38,8 @@ import re
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import requests
@@ -59,7 +54,7 @@ except ImportError:
 STEAM_SEARCH_URL = "https://store.steampowered.com/search/results/"
 COUNT_PER_PAGE   = 50
 MAX_PER_BLOCK    = 30   # máximo exibido por bloco no terminal
-MIN_REVIEWS      = 2000  # jogos com menos reviews são ignorados
+MIN_REVIEWS      = 100   # jogos com menos reviews são ignorados
 MIN_DISCOUNT     = 15    # descontos abaixo disso são ignorados
 
 HEADERS = {
@@ -118,37 +113,38 @@ CYAN  = "\033[96m"
 
 # ─── Score e classificação ────────────────────────────────────────────────────
 
-def calc_score(pct: int, total: int, discount: int) -> float:
-    """
-    Score 0–10 para destacar BONS NEGÓCIOS (não só jogos caros e famosos).
-
-    Três fatores:
-      1) QUALIDADE com confiança — limite inferior de Wilson (95%) da proporção
-         de reviews positivas. Junta num só número "% positivas" + "nº de reviews":
-         95% de 200 reviews vale MENOS que 95% de 200 000 (menos certeza). Conserta
-         o defeito do score antigo, onde % e nº entravam soltos e um jogo nicho com
-         poucas reviews podia inflar.
-      2) FAMA — log das reviews, saturando ~100k. Modificador suave (×0.75–1.0):
-         popularidade conta, mas não domina nem zera um bom jogo.
-      3) DESCONTO — modificador ×0.80–1.0 conforme o % de desconto.
-
-    Núcleo = qualidade × 10; fama e desconto só modulam (−25% / −20% no pior caso).
-    Ref.: AAA 97% de 500k a 70% off ≈ 9.1 · nicho ótimo 95% de 800 a 75% off ≈ 7.9 ·
-    mediano 70% de 2k a 80% off ≈ 6.0.
-    """
-    if total < 10 or pct <= 0:
+def quality_lower_bound(pct: float, total: int) -> float:
+    """Wilson 95%: penaliza incerteza sem premiar fama duas vezes."""
+    if total <= 0 or not math.isfinite(float(pct)):
         return 0.0
-    p = pct / 100.0
-    n = float(total)
-    z = 1.96  # 95% de confiança
-    # Limite inferior de Wilson (0..1) — qualidade já ponderada pela confiança.
-    denom   = 1.0 + z * z / n
-    centre  = p + z * z / (2.0 * n)
-    margin  = z * math.sqrt((p * (1.0 - p) + z * z / (4.0 * n)) / n)
-    quality = (centre - margin) / denom
-    fame    = min(math.log10(n + 1.0) / 5.0, 1.0)        # satura ~100k reviews
-    disc    = max(0, min(discount, 100)) / 100.0
-    return 10.0 * quality * (0.75 + 0.25 * fame) * (0.80 + 0.20 * disc)
+    p = max(0.0, min(float(pct), 100.0)) / 100
+    n, z = float(total), 1.96
+    return (p + z*z/(2*n) - z*math.sqrt((p*(1-p)+z*z/(4*n))/n))/(1+z*z/n)
+
+
+def calc_score(pct: int, total: int, discount: int) -> float:
+    """Qualidade conservadora × oportunidade; desconto não resgata qualidade ruim."""
+    if total < MIN_REVIEWS:
+        return 0.0
+    return 10 * quality_lower_bound(pct, total) * (0.60 + 0.40 * max(0, min(discount, 100))/100)
+
+
+# Tag Hentai e descritor 3 (Adult Only Sexual Content).
+# Nudez (6650), violência e mature geral NÃO são excluídos.
+EXPLICIT_TAG_IDS = {"9130"}
+TAG_NAMES = {}
+COLLECTION_COVERAGE = {"status": "not_run", "strategies": [], "complete_catalog": False}
+
+
+def fetch_tag_names() -> dict:
+    try:
+        resp = requests.get("https://store.steampowered.com/tagdata/populartags/english",
+                            params={"cc": "br"}, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        return {str(t["tagid"]): t["name"] for t in data if t.get("tagid") and t.get("name")}
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        return {}
 
 
 def review_block(pct: int, total: int) -> str:
@@ -169,6 +165,10 @@ def fetch_page(start: int, sort_by: str = "Reviews_DESC") -> tuple[list[dict], i
     """Busca uma página do search da Steam. Retorna (jogos_parsed, total_count)."""
     params = {
         "specials": 1,
+        "cc": "br", "l": "english", "category1": 998,
+        "ignore_preferences": 1,
+        "excluded_tags": ",".join(sorted(EXPLICIT_TAG_IDS)),
+        "excluded_content_descriptors": "3",
         "json":     1,
         "count":    COUNT_PER_PAGE,
         "start":    start,
@@ -200,6 +200,8 @@ def fetch_page(start: int, sort_by: str = "Reviews_DESC") -> tuple[list[dict], i
         if isinstance(items, list):
             raw_html = "\n".join(str(x) for x in items)
 
+    if total > start and not raw_html.strip():
+        raise ValueError("Steam returned missing search HTML")
     soup  = BeautifulSoup(raw_html, "html.parser")
     rows  = soup.find_all("a", class_="search_result_row")
     games = [g for r in rows if (g := _parse_row(r)) is not None]
@@ -214,6 +216,11 @@ def _parse_row(row) -> dict | None:
         name = name_tag.get_text(strip=True) if name_tag else "?"
 
         appid = row.get("data-ds-appid", "").split(",")[0]
+        if not appid.isdigit() or not re.search(r"/app/" + appid + r"(?:/|$)", row.get("href", "")):
+            return None
+        tag_ids = [str(t) for t in json.loads(row.get("data-ds-tagids") or "[]")]
+        if EXPLICIT_TAG_IDS.intersection(tag_ids) or "3" in {str(d) for d in json.loads(row.get("data-ds-content-descriptors") or "[]")}:
+            return None
 
         # ── Desconto ──────────────────────────────────────────────────────
         discount = 0
@@ -266,6 +273,9 @@ def _parse_row(row) -> dict | None:
                 if texts:
                     sale_price = texts[-1]
 
+        if not sale_price.startswith("R$"):
+            return None
+
         # ── Reviews ───────────────────────────────────────────────────────
         pct_positive  = 0
         total_reviews = 0
@@ -303,6 +313,12 @@ def _parse_row(row) -> dict | None:
                       if appid else "")
 
         return {
+            "tag_ids": tag_ids,
+            "tags": [TAG_NAMES[t] for t in tag_ids if t in TAG_NAMES],
+            "genres": [], "categories": [], "currency": "BRL", "country": "BR",
+            "quality_score": round(10 * quality_lower_bound(pct_positive, total_reviews), 3),
+            "confidence": "high" if total_reviews >= 1000 else "moderate",
+            "score_version": 2,
             "name":          name,
             "appid":         appid,
             "discount":      discount,
@@ -324,33 +340,39 @@ def _parse_row(row) -> dict | None:
 # Duas passagens para cobrir jogos diferentes:
 # Reviews_DESC → jogos populares (muitos reviews, desconto variado)
 # sem sort     → relevância Steam para promoções (tende a priorizar descontos maiores)
-FETCH_STRATEGIES = ["Reviews_DESC", ""]
+FETCH_STRATEGIES = ["Reviews_DESC", "Discount_DESC", "Released_DESC", ""]
 
 def _fetch_strategy(sort_by: str, max_pages: int, label: str) -> tuple[list[dict], int]:
     games: list[dict] = []
     total_available = 0
+    report = {"sort": sort_by or "relevance", "pages_scanned": 0, "pages_requested": max_pages,
+              "eligible": 0, "total_available": 0, "status": "bounded"}
+    COLLECTION_COVERAGE["strategies"].append(report)
     for page in range(max_pages):
         start = page * COUNT_PER_PAGE
         print(f"\r  {label} [{page + 1}/{max_pages}] offset={start}...", end="", flush=True)
         try:
             batch, total = fetch_page(start, sort_by=sort_by)
             total_available = total
-            if not batch:
-                break
+            report.update(pages_scanned=page+1, total_available=total)
+            report["eligible"] += len(batch)
             games.extend(batch)
             if start + COUNT_PER_PAGE >= total:
+                report["status"] = "exhausted"
                 break
             time.sleep(0.3)
         except requests.HTTPError as e:
-            print(f"\n[!] HTTP {e.response.status_code}")
-            break
+            report["status"] = "failed"
+            raise RuntimeError("Steam collection failed; previous output must be retained") from e
         except Exception as e:
-            print(f"\n[!] Erro: {e}")
-            break
+            report["status"] = "failed"
+            raise RuntimeError("Steam collection failed; previous output must be retained") from e
     return games, total_available
 
 
 def collect_all(max_pages: int) -> list[dict]:
+    COLLECTION_COVERAGE.update(status="running", strategies=[], complete_catalog=False)
+    TAG_NAMES.update(fetch_tag_names())
     seen:      set[str]   = set()
     all_games: list[dict] = []
     total_available = 0
@@ -367,74 +389,22 @@ def collect_all(max_pages: int) -> list[dict]:
                 new += 1
         print(f"\r  pass {i+1}: +{new} novos (total único: {len(all_games)})          ")
 
+    COLLECTION_COVERAGE.update(status="bounded_sample", unique_games=len(all_games),
+                               total_available=total_available,
+                               pages_scanned=sum(x["pages_scanned"] for x in COLLECTION_COVERAGE["strategies"]))
     print(f"  Total disponível na Steam: ~{total_available} jogos em promoção")
     return all_games
 
 
-# ─── Baixa histórica (CheapShark) ─────────────────────────────────────────────
-# Estratégia: 2 chamadas por jogo
-#   1. GET /games?steamAppID={appid}  → {gameID, cheapest_usd_ever}
-#   2. GET /games?id={gameID}         → {cheapestPriceEver.price, deals[storeID=1].price}
-# Rate limit: lock compartilhado garante ≤ 4.5 req/s (não estourar o CheapShark)
-
+# ─── Histórico regional observado (BRL) ─────────────────────────────────────
 import threading as _threading
-
-# CheapShark storeID → nome. O mesmo /games?id= que consultamos p/ a baixa já traz
-# TODAS as lojas em `deals`, então cruzar preços multi-loja sai "de graça" (reuso).
-CS_STORES = {
-    "1": "Steam", "3": "GreenManGaming", "7": "GOG", "11": "Humble",
-    "15": "Fanatical", "25": "Epic", "27": "Gamesplanet", "13": "Ubisoft",
-    "23": "GameBillet", "24": "Voidu", "30": "IndieGala", "35": "DreamGame",
-}
-# Só surfaçamos lojas "confiáveis" (chave oficial p/ Steam) na comparação.
-CS_STORES_SHOW = {"1", "3", "7", "11", "15", "25", "27"}
-
-_cs_lock       = _threading.Lock()
-_cs_last_call  = [0.0]
-_CS_INTERVAL   = 0.5    # 2 req/s — seguro para uso diário
-# CheapShark bloqueia o IP em rajada grande. Por isso semeamos um LOTE pequeno por
-# execução (o cron diário enche aos poucos), com backoff curto e um circuit breaker
-# que desliga o resto do lote quando detecta bloqueio (evita travar o cron).
-SEED_BATCH     = 120
-_cs_blocked    = [False]   # circuit breaker do run atual
-_cs_streak     = [0]       # 429 consecutivos
-
-
-def _cs_get(path: str, params: dict, _retry: int = 1) -> any:
-    """GET ao CheapShark com rate limiting, backoff curto e circuit breaker."""
-    if _cs_blocked[0]:           # bloqueio já detectado neste run → não insiste
-        return None
-    with _cs_lock:
-        gap = _CS_INTERVAL - (time.time() - _cs_last_call[0])
-        if gap > 0:
-            time.sleep(gap)
-        _cs_last_call[0] = time.time()
-    try:
-        r = requests.get(
-            f"https://www.cheapshark.com/api/1.0{path}",
-            params=params, timeout=10,
-        )
-        if r.status_code == 429:
-            _cs_streak[0] += 1
-            if _cs_streak[0] >= 12:          # IP bloqueado → desliga o resto do lote
-                _cs_blocked[0] = True
-            if _retry > 0 and not _cs_blocked[0]:
-                time.sleep(8)                # backoff curto
-                return _cs_get(path, params, _retry=_retry - 1)
-            return None
-        if r.status_code == 200:
-            _cs_streak[0] = 0                 # sucesso reseta a sequência de 429
-            return r.json()
-        return None
-    except Exception:
-        return None
 
 
 def _parse_brl(price_str: str) -> float:
     """Extrai valor numérico de 'R$ 9,99' ou 'R$9.99'. Retorna 0.0 se falhar."""
     try:
         s = re.sub(r"[R$\s]", "", price_str)   # remove R$, espaços
-        s = s.replace(".", "").replace(",", ".")  # "9.999,99" → "9999.99"
+        s = s.replace(".", "").replace(",", ".") if "," in s else s  # "9.999,99" → "9999.99"
         return float(s)
     except Exception:
         return 0.0
@@ -444,13 +414,8 @@ def _fmt_brl(value: float) -> str:
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-# Cache persistente de baixa histórica (vive no volume data/, ao lado de games.json).
-# Estrutura: { appid: {low_brl: float, low_str: "R$ ...", src: "cs"|"obs",
-#                       beaten: bool, updated: ISO} }
-# - "cs"  : baixa semeada do CheapShark (cheapestPriceEver convertido p/ BRL)
-# - "obs" : sem dado no CheapShark — assumimos o preço observado como baixa conhecida
-# - beaten: já vimos o preço cair abaixo do valor inicial (confirma drop real)
-HIST_CACHE_NAME = "historical_lows.json"
+# Série v2 exclui cache legado sem região e preços sintéticos derivados de USD.
+HIST_CACHE_NAME = "observed_lows_br_app_v2.json"
 
 
 def _load_low_cache(path: str) -> dict:
@@ -475,223 +440,63 @@ def _save_low_cache(path: str, cache: dict) -> None:
         pass
 
 
-def _best_deals_by_store(deals: list) -> list[dict]:
-    """Menor deal por loja (só as lojas em CS_STORES_SHOW). Preço em USD (crú)."""
-    best: dict[str, dict] = {}
-    for d in deals or []:
-        sid = str(d.get("storeID"))
-        if sid not in CS_STORES_SHOW:
-            continue
-        try:
-            price = float(d.get("price", 0))
-        except (TypeError, ValueError):
-            continue
-        if price <= 0:
-            continue
-        cur = best.get(sid)
-        if cur is None or price < cur["price_usd"]:
-            best[sid] = {
-                "store":     CS_STORES.get(sid, "Loja"),
-                "price_usd": price,
-                "url":       (f"https://www.cheapshark.com/redirect?dealID={d.get('dealID')}"
-                              if d.get("dealID") else ""),
-            }
-    return list(best.values())
-
-
-def _check_one_low(game: dict) -> tuple[str, bool, float, float, list]:
-    """
-    Retorna (appid, is_historical_low, cheapest_ever_usd, current_usd, stores_usd).
-    A conversão para BRL é feita no chamador usando o preço BRL do jogo. `stores_usd`
-    é a lista de menores deals por loja (Steam/GOG/Fanatical/…), preços em USD.
-    """
-    appid = game["appid"]
-    try:
-        step1 = _cs_get("/games", {"steamAppID": appid})
-        if not step1 or not isinstance(step1, list) or not step1:
-            return appid, False, 0.0, 0.0, []
-        game_id = step1[0].get("gameID", "")
-        if not game_id:
-            return appid, False, 0.0, 0.0, []
-
-        step2 = _cs_get("/games", {"id": game_id})
-        if not step2 or not isinstance(step2, dict):
-            return appid, False, 0.0, 0.0, []
-
-        deals = step2.get("deals", []) or []
-        stores_usd = _best_deals_by_store(deals)
-
-        cheapest_str = step2.get("cheapestPriceEver", {}).get("price", "")
-        if not cheapest_str:
-            return appid, False, 0.0, 0.0, stores_usd
-        cheapest_ever = float(cheapest_str)
-        if cheapest_ever <= 0:
-            return appid, False, 0.0, 0.0, stores_usd
-
-        steam_deal = next(
-            (d for d in deals if str(d.get("storeID")) == "1"),
-            None,
-        )
-        if not steam_deal:
-            return appid, False, cheapest_ever, 0.0, stores_usd
-
-        current_usd = float(steam_deal.get("price", 0))
-        is_low = current_usd > 0 and current_usd <= cheapest_ever * 1.02
-        return appid, is_low, cheapest_ever, current_usd, stores_usd
-    except Exception:
-        return appid, False, 0.0, 0.0, []
+def update_score_details(game: dict, proximity: float | None = None) -> None:
+    """Desconto + distância ao menor BRL observado, nunca uma mínima global inventada."""
+    quality = quality_lower_bound(game.get("pct_positive", 0), game.get("total_reviews", 0))
+    discount = max(0, min(game.get("discount", 0), 100)) / 100
+    history_factor = 1.0 if proximity is None else 0.90 + 0.10 * max(0, min(proximity, 1))
+    deal = (0.60 + 0.40 * discount) * history_factor
+    game.update(quality_score=round(quality * 10, 3), deal_score=round(deal * 10, 3),
+                score=10 * quality * deal if game.get("total_reviews", 0) >= MIN_REVIEWS else 0,
+                hidden_gem=bool(MIN_REVIEWS <= game.get("total_reviews", 0) < 5000 and quality >= 0.85),
+                score_components={"wilson_lower_bound": round(quality, 6), "discount_fraction": discount,
+                                  "observed_price_proximity": proximity, "history_factor": history_factor},
+                score_rationale="Wilson 95% mede confiança nas avaliações, não qualidade absoluta. "
+                    + ("Histórico BR insuficiente: efeito neutro." if proximity is None else
+                       "Oportunidade ajustada pela distância ao menor BRL observado em pelo menos duas datas."))
 
 
 def apply_low_cache(games: list[dict], cache_path: str) -> None:
-    """
-    Aplica o CACHE de baixa histórica a TODOS os jogos (preenche
-    game['low_price_brl'] e game['historical_low']) — SEM rede. Rápido.
-
-    A baixa só muda quando o preço atual SUPERA o recorde (preço < baixa
-    conhecida): aí o próprio preço atual vira a nova baixa (sem reconsultar o
-    CheapShark) e é gravado na hora. Chamado na fase 1 (publica já o que está
-    cacheado) e de novo na fase 2 (após semear os novos).
-    """
+    """Menor preço OBSERVADO BRL. USD ou antigos valores sintéticos são inválidos."""
     cache = _load_low_cache(cache_path)
-    now_iso = datetime.now().isoformat(timespec="seconds")
-    records = obs_new = 0
-    dirty = False
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for g in games:
-        appid = g.get("appid", "")
-        ent = cache.get(appid)
-        cur_brl = _parse_brl(g.get("sale_price", ""))
-
-        if ent is not None and ent.get("src") == "cs":
-            # Baixa VERIFICADA do CheapShark (recorde de todos os tempos).
-            low_brl = float(ent.get("low_brl") or 0.0)
-            # Novo recorde: preço atual abaixo da baixa → vira a nova baixa.
-            if cur_brl > 0 and (low_brl <= 0 or cur_brl < low_brl - 0.005):
-                low_brl = cur_brl
-                ent.update(low_brl=round(low_brl, 2), low_str=_fmt_brl(low_brl),
-                           beaten=True, updated=now_iso)
-                records += 1
-                dirty = True
-            g["low_price_brl"] = ent.get("low_str") or (_fmt_brl(low_brl) if low_brl > 0 else "")
-            g["low_src"] = "cs"
-            g["historical_low"] = bool(cur_brl > 0 and low_brl > 0 and cur_brl <= low_brl * 1.02)
-            g["stores"] = ent.get("stores") or []
+        appid = g["appid"]
+        cur = _parse_brl(g.get("sale_price", ""))
+        ent = cache.get(appid) or {}
+        if ent.get("src") != "obs" or ent.get("currency") != "BRL":
+            ent = {}
+        g.update(historical_low=False, observed_low=False, stores=[], low_src="obs",
+                 low_price_brl="", low_observed_since="")
+        if cur <= 0:
+            update_score_details(g)
             continue
-
-        # ── Fallback OBSERVADO: sem dado do CheapShark ainda → mostra o MENOR
-        #    preço que já observamos (e vai baixando dia a dia). Garante que todo
-        #    jogo tenha um valor, não "—". Vira "cs" quando o seeding conseguir. ──
-        if cur_brl <= 0:
-            g["historical_low"] = False
-            g["low_price_brl"] = ""
-            g["low_src"] = ""
-            continue
-        if ent is None:
-            ent = {"low_brl": round(cur_brl, 2), "low_str": _fmt_brl(cur_brl),
-                   "src": "obs", "beaten": False, "updated": now_iso}
-            cache[appid] = ent
-            obs_new += 1
-            dirty = True
-        else:
-            low_brl = float(ent.get("low_brl") or 0.0)
-            if low_brl <= 0 or cur_brl < low_brl - 0.005:   # novo menor observado
-                ent.update(low_brl=round(cur_brl, 2), low_str=_fmt_brl(cur_brl),
-                           beaten=(low_brl > 0), updated=now_iso)
-                dirty = True
-        low_brl = float(ent.get("low_brl") or 0.0)
-        g["low_price_brl"] = ent.get("low_str") or ""
-        g["low_src"] = "obs"
-        # ★ só quando houve queda REAL observada (beaten) e está no menor agora.
-        g["historical_low"] = bool(cur_brl > 0 and low_brl > 0 and ent.get("beaten")
-                                   and cur_brl <= low_brl * 1.02)
-
-    if dirty:
-        _save_low_cache(cache_path, cache)
-    have = sum(1 for g in games if g.get("low_price_brl"))
-    cs_n = sum(1 for g in games if g.get("low_src") == "cs")
-    print(f"  Baixa histórica: {have}/{len(games)} com valor ({cs_n} CheapShark · "
-          f"{have - cs_n} observadas) · {records} recordes novos · {obs_new} obs novas · "
-          f"{len(cache)} no cache.")
+        if not ent:
+            ent = {"low_brl": cur, "src": "obs", "currency": "BRL", "country": "BR",
+                   "first_seen": now, "beaten": False}
+        elif cur < float(ent.get("low_brl") or cur) - 0.005:
+            ent.update(low_brl=cur, beaten=True)
+        dates = sorted(set(ent.get("observed_dates", []) + [now[:10]]))
+        ent.update(low_str=_fmt_brl(ent["low_brl"]), updated=now, observed_dates=dates[-90:])
+        cache[appid] = ent
+        update_score_details(g, min(1.0, ent["low_brl"] / cur) if len(dates) >= 2 else None)
+        g.update(low_price_brl=ent["low_str"], low_observed_since=ent["first_seen"],
+                 observed_low=bool(ent.get("beaten") and cur <= ent["low_brl"] + 0.005))
+    _save_low_cache(cache_path, cache)
 
 
 def seed_low_cache(games: list[dict], cache_path: str) -> None:
-    """
-    Semeia o cache de baixa histórica APENAS para os jogos ainda não cacheados,
-    via CheapShark (lento). Grava cada baixa na hora → ao vivo e RESUMÍVEL: um
-    timeout no meio não perde o progresso, a próxima execução continua de onde
-    parou. Após o primeiro seeding completo, o custo externo cai a ~zero.
-    """
-    cache = _load_low_cache(cache_path)
-    # Verifica o que falta E o que está como "obs" (baixa não-verificada de runs
-    # antigas em que o CheapShark falhou): só confiamos em baixa REAL (src="cs").
-    # Também re-verifica jogos já "cs" que ainda não tiveram as LOJAS coletadas
-    # (feature nova) — uma vez só, marcado por "stores_checked".
-    def _needs(g):
-        ent = cache.get(g.get("appid"), {})
-        return ent.get("src") != "cs" or not ent.get("stores_checked")
-    needs = [g for g in games if g.get("appid") and _needs(g)]
-    if not needs:
-        print("  Baixa histórica: cache cobre todos os jogos (0 chamadas externas).")
-        return
-    total = len(needs)
-    needs = needs[:SEED_BATCH]           # lote pequeno → não toma block do CheapShark
-    n = len(needs)
-    print(f"  Baixa histórica: verificando {n}/{total} jogos no CheapShark "
-          f"(lote diário; o resto vem nas próximas execuções)...")
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(_check_one_low, g): g for g in needs}
-        done = 0
-        for fut in as_completed(futures):
-            g = futures[fut]
-            _appid, _is_low, cheapest_usd, current_usd, stores_usd = fut.result()
-            brl_val = _parse_brl(g.get("sale_price", ""))
-            ratio = (brl_val / current_usd) if (brl_val > 0 and current_usd > 0) else 0.0
-
-            # Preços multi-loja convertidos p/ BRL pelo mesmo ratio da baixa (USD→BRL).
-            stores_brl = []
-            if ratio > 0 and stores_usd:
-                for s in stores_usd:
-                    pbrl = round(s["price_usd"] * ratio, 2)
-                    stores_brl.append({"store": s["store"], "price": _fmt_brl(pbrl),
-                                       "price_brl": pbrl, "url": s.get("url", "")})
-                stores_brl.sort(key=lambda x: x["price_brl"])
-                for i, s in enumerate(stores_brl):
-                    s["best"] = (i == 0)
-
-            # Só grava baixa VERIFICADA do CheapShark. Sem dado/erro (429) → NÃO
-            # cacheia (mostra "—" e tenta de novo na próxima execução). Nada de
-            # "obs" (preço atual fingindo de baixa histórica).
-            if cheapest_usd > 0 and ratio > 0:
-                low_brl = cheapest_usd * ratio
-                cache[g["appid"]] = {
-                    "low_brl": round(low_brl, 2),
-                    "low_str": _fmt_brl(low_brl),
-                    "src":     "cs",
-                    "beaten":  False,
-                    "stores":  stores_brl,
-                    "stores_checked": True,
-                    "updated": datetime.now().isoformat(timespec="seconds"),
-                }
-                _save_low_cache(cache_path, cache)   # grava cada baixa na hora → resumível
-            elif ratio > 0 and cache.get(g["appid"], {}).get("src") == "cs":
-                # Já tínhamos a baixa cs; só faltavam as lojas → completa sem re-baixar.
-                cache[g["appid"]]["stores"] = stores_brl
-                cache[g["appid"]]["stores_checked"] = True
-                _save_low_cache(cache_path, cache)
-            done += 1
-            print(f"\r  CheapShark: {done}/{n}...", end="", flush=True)
-    print()
+    """Compatibilidade: CheapShark USD não comprova mínima regional Steam BRL."""
+    return None
 
 # ─── Metadados: gênero / tags / Steam Deck (Steam appdetails) ─────────────────
 # Enriquece cada jogo com gêneros, algumas tags de jogabilidade e a compatibilidade
 # com o Steam Deck. Como o appdetails é bem rate-limited, semeamos um LOTE pequeno
-# por execução e cacheamos em meta_cache.json (gênero nunca muda; Deck quase nunca).
+# por execução; TTL de 30 dias, tentativas antigas têm prioridade na fila.
 META_CACHE_NAME = "meta_cache.json"
 META_BATCH      = 80
 META_INTERVAL   = 1.5          # ~40 req/min — gentil com o appdetails da Steam
 
-# Categorias (multiplayer) que viram "tag" de jogabilidade além do gênero.
-_CAT_KEEP = {"Co-op", "Online Co-op", "Local Co-op", "Multi-player",
-             "PvP", "Massively Multiplayer"}
 # resolved_category do relatório de Deck → rótulo do frontend.
 _DECK_MAP = {0: "unknown", 1: "unsupported", 2: "playable", 3: "verified"}
 
@@ -728,19 +533,13 @@ def _steam_get(url: str, params: dict):
 def _fetch_meta_one(appid: str) -> dict | None:
     """Busca gêneros/tags (appdetails) + Deck (relatório de compat). None se falhar."""
     d = _steam_get("https://store.steampowered.com/api/appdetails",
-                   {"appids": appid, "cc": "br", "l": "portuguese"})
+                   {"appids": appid, "cc": "br", "l": "brazilian"})
     node = (d or {}).get(str(appid)) if isinstance(d, dict) else None
     if not node or not node.get("success"):
         return None
     data = node.get("data") or {}
-    genres = [g.get("description") for g in (data.get("genres") or []) if g.get("description")][:4]
+    genres = [g.get("description") for g in (data.get("genres") or []) if g.get("description")]
     cats   = [c.get("description") for c in (data.get("categories") or []) if c.get("description")]
-    tags   = []
-    for t in genres[:3] + [c for c in cats if c in _CAT_KEEP]:
-        if t and t not in tags:
-            tags.append(t)
-    tags = tags[:4]
-
     deck = "unknown"
     dj = _steam_get("https://store.steampowered.com/saleaction/ajaxgetdeckappcompatibilityreport",
                     {"nAppID": appid, "l": "english"})
@@ -748,8 +547,18 @@ def _fetch_meta_one(appid: str) -> dict | None:
         cat = (dj.get("results") or {}).get("resolved_category")
         if isinstance(cat, int):
             deck = _DECK_MAP.get(cat, "unknown")
-    return {"genres": genres, "tags": tags, "deck": deck,
-            "updated": datetime.now().isoformat(timespec="seconds")}
+    return {"genres": genres, "tags": [], "categories": cats, "deck": deck, "schema_version": 2,
+            "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+
+def _meta_fresh(ent: dict) -> bool:
+    if not isinstance(ent, dict) or ent.get("schema_version") != 2:
+        return False
+    try:
+        updated = datetime.fromisoformat(ent["updated"])
+        return updated.tzinfo is not None and 0 <= (datetime.now(timezone.utc)-updated).total_seconds() < 30*86400
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def apply_meta_cache(games: list[dict], cache_path: str) -> None:
@@ -757,16 +566,19 @@ def apply_meta_cache(games: list[dict], cache_path: str) -> None:
     cache = _load_low_cache(cache_path)   # mesmo helper de I/O de JSON
     for g in games:
         ent = cache.get(g.get("appid", ""))
-        if isinstance(ent, dict):
+        g["metadata_status"] = "missing"
+        if isinstance(ent, dict) and ent.get("schema_version") == 2:
+            g["metadata_status"] = "verified" if _meta_fresh(ent) else "stale"
             g["genres"] = ent.get("genres") or []
-            g["tags"]   = ent.get("tags") or []
+            g["categories"] = ent.get("categories") or []
             g["deck"]   = ent.get("deck") or "unknown"
 
 
 def seed_meta_cache(games: list[dict], cache_path: str) -> None:
     """Semeia metadados p/ os jogos ainda não cacheados (lote pequeno, resumível)."""
     cache = _load_low_cache(cache_path)
-    needs = [g for g in games if g.get("appid") and g["appid"] not in cache]
+    needs = [g for g in games if g.get("appid") and not _meta_fresh(cache.get(g["appid"], {}))]
+    needs.sort(key=lambda g: cache.get(g["appid"], {}).get("last_attempt", ""))
     if not needs:
         print("  Metadados: cache cobre todos os jogos (0 chamadas externas).")
         return
@@ -782,7 +594,8 @@ def seed_meta_cache(games: list[dict], cache_path: str) -> None:
         meta = _fetch_meta_one(g["appid"])
         if meta:
             cache[g["appid"]] = meta
-            _save_low_cache(cache_path, cache)   # grava na hora → resumível
+        cache.setdefault(g["appid"], {})["last_attempt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _save_low_cache(cache_path, cache)   # grava na hora → resumível
         done += 1
         print(f"\r  appdetails: {done}/{len(needs)}...", end="", flush=True)
     print()
@@ -792,14 +605,14 @@ def seed_meta_cache(games: list[dict], cache_path: str) -> None:
 # Sem fonte pública de histórico Steam sem API key; então acumulamos 1 ponto/dia
 # (o preço promocional observado) em price_series.json. A sparkline enche com o
 # tempo — honesto, no mesmo espírito da baixa "observada".
-PRICE_SERIES_NAME = "price_series.json"
-PRICE_SERIES_MAX  = 24
+PRICE_SERIES_NAME = "price_series_br_app_v2.json"
+PRICE_SERIES_MAX  = 365
 
 
 def record_price_history(games: list[dict], path: str) -> None:
     """Anexa o ponto de hoje (preço promo) por jogo e expõe g['price_history']."""
     series = _load_low_cache(path)
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     dirty = False
     for g in games:
         appid = g.get("appid", "")
@@ -847,13 +660,13 @@ def print_results(by_block: dict[str, list[dict]], total_collected: int):
 
     print(f"\n{BOLD}{CYAN}{'═' * W}")
     print(f"  GAME PROMO RANKER  —  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"  Score 0-10 = qualidade(Wilson) × fama(log reviews) × bonus desconto")
-    print(f"  Quanto maior, melhor a relação qualidade + fama + desconto")
+    print(f"  Score 0-10 = qualidade(Wilson 95%) × (0.60 + 0.40 × desconto)")
+    print(f"  Quanto maior, melhor a relação qualidade conservadora + desconto")
     print(f"{'═' * W}{RESET}\n")
 
     total_shown = 0
     for block_name in BLOCK_ORDER:
-        games = by_block.get(block_name, [])
+        games = sorted(by_block.get(block_name, []), key=lambda g: g.get("score", 0), reverse=True)
         if not games:
             continue
 
@@ -904,7 +717,7 @@ def generate_html(by_block: dict[str, list[dict]], total_collected: int) -> str:
 
     rows_by_block = ""
     for block_name in BLOCK_ORDER:
-        games = by_block.get(block_name, [])
+        games = sorted(by_block.get(block_name, []), key=lambda g: g.get("score", 0), reverse=True)
         if not games:
             continue
         hex_color = BLOCK_HEX[block_name]
@@ -1102,15 +915,15 @@ def generate_html(by_block: dict[str, list[dict]], total_collected: int) -> str:
   <h1>Game Promo Ranker</h1>
   <div class="subtitle">Gerado em {now}  —  {total_collected} jogos coletados</div>
   <div class="formula">
-    score 0–10 = qualidade(Wilson das reviews) × fama(log reviews) × bônus de desconto
+    score 0–10 = qualidade(Wilson 95%) × (0.60 + 0.40 × desconto)
   </div>
   <div class="legend">
     <span><span class="sw new"></span> <b>NEW</b> — entrou em promoção hoje (vs. ontem)</span>
-    <span><span class="sw hist"></span> <b>Baixa histórica</b> — menor preço de sempre</span>
+    <span><span class="sw hist"></span> <b>Menor observado BRL</b> — limitado ao período acompanhado</span>
   </div>
   {rows_by_block}
   <footer>
-    Fórmula: qualidade × fama × bônus de desconto.<br>
+    Fórmula: Wilson 95% × (0.60 + 0.40 × desconto); sem bônus de fama.<br>
     O desconto pesa 50% do seu valor real para não suplantar qualidade e popularidade.
   </footer>
 </body>
@@ -1131,6 +944,9 @@ JSON_GAME_FIELDS = [
     "historical_low", "low_price_brl", "is_new", "img_url", "url",
     # enriquecidos (v2): capa larga, gênero/tags, Steam Deck, multi-loja, histórico
     "header_img", "genres", "tags", "deck", "stores", "price_history",
+    "categories", "tag_ids", "currency", "country", "quality_score", "confidence",
+    "score_version", "observed_low", "low_observed_since",
+    "deal_score", "score_components", "score_rationale", "hidden_gem", "metadata_status",
 ]
 
 
@@ -1153,10 +969,10 @@ def build_json_payload(by_block: dict[str, list[dict]], total_collected: int) ->
 
     Jogos de cada bloco já vêm ordenados por score desc (feito em main()).
     """
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     blocks = []
     for block_name in BLOCK_ORDER:
-        games = by_block.get(block_name, [])
+        games = sorted(by_block.get(block_name, []), key=lambda g: g.get("score", 0), reverse=True)
         if not games:
             continue
         serialized = []
@@ -1170,7 +986,7 @@ def build_json_payload(by_block: dict[str, list[dict]], total_collected: int) ->
             row["historical_low"] = bool(g.get("historical_low", False))
             row["is_new"]         = bool(g.get("is_new", False))
             row["low_price_brl"]  = g.get("low_price_brl") or ""
-            row["low_src"]        = g.get("low_src") or ""   # "cs"=CheapShark · "obs"=menor observado
+            row["low_src"]        = g.get("low_src") or ""   # "obs"=menor observado Steam BRL
             row["reviews_human"]  = fmt_num(int(g.get("total_reviews") or 0))
             # enriquecidos: garante defaults limpos (listas/strings) p/ o frontend
             row["header_img"]     = g.get("header_img") or ""
@@ -1188,6 +1004,9 @@ def build_json_payload(by_block: dict[str, list[dict]], total_collected: int) ->
         })
 
     return {
+        "coverage": dict(COLLECTION_COVERAGE, metadata_verified=sum(
+            1 for block in blocks for g in block["games"] if g.get("metadata_status") == "verified"),
+            tags_resolved=sum(1 for block in blocks for g in block["games"] if g.get("tags"))),
         "generated_at":       now.isoformat(timespec="seconds"),
         "generated_at_human": now.strftime("%d/%m/%Y %H:%M"),
         "total_collected":    total_collected,
@@ -1250,8 +1069,9 @@ def main():
     all_games = collect_all(max_pages)
 
     if not all_games:
-        print("\n[!] Nenhum jogo encontrado. Verifique conexão ou tente com VPN.")
-        return
+        print("\n[!] Nenhum jogo encontrado; snapshot anterior preservado.")
+        COLLECTION_COVERAGE["status"] = "failed"
+        sys.exit(1)
 
     # Deduplicar por appid
     seen: set[str] = set()
@@ -1290,7 +1110,7 @@ def main():
         save_json(by_block, len(unique), json_path)
         print(f"[fase 1] JSON publicado em {json_path} (com as baixas do cache)")
 
-    # FASE 2 — semeia os jogos ainda não cacheados (CheapShark + appdetails, lentos
+    # FASE 2 — semeia os jogos ainda não cacheados (appdetails, lentos
     # e resumíveis), reaplica os caches e republica com tudo enriquecido.
     seed_low_cache(unique, hist_cache_path)
     apply_low_cache(unique, hist_cache_path)
