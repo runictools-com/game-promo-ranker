@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import Mock
 from datetime import datetime, timezone
 
 import steam_releases as s
@@ -13,6 +14,52 @@ def row(appid=1, raw="12 Sep, 2026", tags="[19]", descriptors="[]", key=None):
 
 
 class ReleasesTests(unittest.TestCase):
+    def transport(self, codes, headers=None):
+        clock = [0.0]
+        calls = []
+        sleeps = []
+        responses = []
+        for code in codes:
+            response = Mock(status_code=code, headers=headers or {})
+            response.json.return_value = {"ok": True}
+            if code >= 400:
+                response.raise_for_status.side_effect = s.requests.HTTPError(str(code))
+            responses.append(response)
+        def request(*args, **kwargs):
+            calls.append(clock[0])
+            return responses.pop(0)
+        def sleep(seconds):
+            sleeps.append(seconds)
+            clock[0] += seconds
+        return s.SteamTransport(request=request, sleep=sleep, monotonic=lambda: clock[0], utc=lambda: NOW), calls, sleeps
+
+    def test_transport_throttles_all_threads_without_real_sleep(self):
+        transport, calls, _ = self.transport([200] * 4)
+        with s.ThreadPoolExecutor(max_workers=3) as pool:
+            list(pool.map(transport.get_json, [s.TAG_URL, s.SEARCH, s.SEARCH, s.SEARCH]))
+        self.assertEqual(calls, [0, 3, 6, 9])
+
+    def test_retry_after_and_fallback_share_cooldown(self):
+        transport, calls, _ = self.transport([429, 503, 200])
+        transport.get_json(s.SEARCH)
+        self.assertEqual(calls, [0, 30, 90])
+        transport, calls, sleeps = self.transport([429, 200], {"Retry-After": "120"})
+        transport.get_json(s.SEARCH)
+        self.assertEqual(calls, [0, 120])
+        self.assertTrue(all(delay <= 60 for delay in sleeps))
+
+    def test_retry_limit_and_following_thread_cooldown(self):
+        transport, calls, _ = self.transport([429, 429, 429, 200], {"Retry-After": "5"})
+        with self.assertRaises(s.requests.HTTPError):
+            transport.get_json(s.SEARCH)
+        transport.get_json(s.TAG_URL)
+        self.assertEqual(calls, [0, 5, 10, 15])
+
+    def test_partial_and_unavailable_exit_nonzero(self):
+        self.assertEqual(s.exit_code(dict(status="ok", tag_status="ok")), 0)
+        for status in ("partial", "unavailable"):
+            self.assertEqual(s.exit_code(dict(status=status, tag_status="ok")), 1)
+
     def test_precision_never_fabricates_day(self):
         for raw, precision, period in [("Q4 2026", "quarter", "2026-Q4"), ("September 2026", "month", "2026-09"),
                                        ("2027", "year", "2027"), ("Coming soon", "unknown", None)]:

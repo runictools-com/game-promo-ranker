@@ -37,6 +37,8 @@ import os
 import re
 import sys
 import time
+import threading as _threading
+from email.utils import parsedate_to_datetime
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -161,6 +163,49 @@ def review_block(pct: int, total: int) -> str:
 
 # ─── Coleta ───────────────────────────────────────────────────────────────────
 
+SEARCH_INTERVAL = 3.0
+SEARCH_RETRIES = 2
+_search_lock = _threading.Lock()
+_search_last_call = None
+
+
+def _retry_delay(response, attempt):
+    """Retry-After seconds or HTTP date; bounded 120s, fallback 30/60s."""
+    raw = response.headers.get("Retry-After", "")
+    try:
+        delay = float(raw)
+        if not math.isfinite(delay):
+            raise ValueError("non-finite delay")
+    except (TypeError, ValueError):
+        try:
+            date = parsedate_to_datetime(raw)
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            delay = (date - datetime.now(timezone.utc)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            delay = 30.0 * (attempt + 1)
+    return max(0.0, min(120.0, delay))
+
+
+def _search_get(params):
+    """Shared pacing for all search strategies, including transient retries."""
+    global _search_last_call
+    for attempt in range(SEARCH_RETRIES + 1):
+        with _search_lock:
+            if _search_last_call is not None:
+                gap = SEARCH_INTERVAL - (time.monotonic() - _search_last_call)
+                if gap > 0:
+                    time.sleep(gap)
+            _search_last_call = time.monotonic()
+        response = requests.get(STEAM_SEARCH_URL, params=params, headers=HEADERS,
+                                cookies=COOKIES, timeout=20)
+        if response.status_code not in (429, 503) or attempt == SEARCH_RETRIES:
+            response.raise_for_status()
+            return response
+        time.sleep(_retry_delay(response, attempt))
+    raise RuntimeError("Steam search retry exhausted")
+
+
 def fetch_page(start: int, sort_by: str = "Reviews_DESC") -> tuple[list[dict], int]:
     """Busca uma página do search da Steam. Retorna (jogos_parsed, total_count)."""
     params = {
@@ -176,14 +221,7 @@ def fetch_page(start: int, sort_by: str = "Reviews_DESC") -> tuple[list[dict], i
     }
     if sort_by:
         params["sort_by"] = sort_by
-    resp = requests.get(
-        STEAM_SEARCH_URL,
-        params=params,
-        headers=HEADERS,
-        cookies=COOKIES,
-        timeout=20,
-    )
-    resp.raise_for_status()
+    resp = _search_get(params)
     data = resp.json()
 
     total = int(data.get("total_count", 0))
@@ -360,7 +398,6 @@ def _fetch_strategy(sort_by: str, max_pages: int, label: str) -> tuple[list[dict
             if start + COUNT_PER_PAGE >= total:
                 report["status"] = "exhausted"
                 break
-            time.sleep(0.3)
         except requests.HTTPError as e:
             report["status"] = "failed"
             raise RuntimeError("Steam collection failed; previous output must be retained") from e
@@ -371,6 +408,7 @@ def _fetch_strategy(sort_by: str, max_pages: int, label: str) -> tuple[list[dict
 
 
 def collect_all(max_pages: int) -> list[dict]:
+    max_pages = max(1, min(20, max_pages))
     COLLECTION_COVERAGE.update(status="running", strategies=[], complete_catalog=False)
     TAG_NAMES.update(fetch_tag_names())
     seen:      set[str]   = set()
@@ -397,7 +435,6 @@ def collect_all(max_pages: int) -> list[dict]:
 
 
 # ─── Histórico regional observado (BRL) ─────────────────────────────────────
-import threading as _threading
 
 
 def _parse_brl(price_str: str) -> float:
@@ -1033,7 +1070,7 @@ def save_json(by_block: dict[str, list[dict]], total_collected: int, path: str):
 
 def main():
     args       = sys.argv[1:]
-    max_pages  = 10
+    max_pages  = 20
     output_html = "--html" in args
     out_path = "steam_sale_ranker.html"
     if "--out" in args:
@@ -1061,7 +1098,7 @@ def main():
 
     numeric = [a for a in args if a.isdigit()]
     if numeric:
-        max_pages = max(1, int(numeric[0]))
+        max_pages = max(1, min(20, int(numeric[0])))
 
     print(f"\n{BOLD}Game Promo Ranker{RESET}")
     print(f"Buscando até {max_pages * COUNT_PER_PAGE} jogos em promoção...\n")

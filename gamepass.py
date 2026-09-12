@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone, timedelta
 
 import requests
@@ -54,14 +55,39 @@ def resolve(ids):
     out = {}
     for i in range(0, len(ids), 20):
         batch = ids[i:i + 20]
-        try:
-            r = requests.get(DCAT_URL, headers=HEADERS, timeout=25, params={
-                "bigIds": ",".join(batch), "market": MARKET,
-                "languages": LANG, "MS-CV": "DGU1mcuYo0WMMp.1",
-            })
-            prods = r.json().get("Products", [])
-        except Exception:
-            continue
+        # A denied/partial catalog is not evidence that games left Game Pass.
+        # Retry transient failures once, then preserve both previous files.
+        for attempt in range(2):
+            r = None
+            try:
+                r = requests.get(DCAT_URL, headers=HEADERS, timeout=25, params={
+                    "bigIds": ",".join(batch), "market": MARKET,
+                    "languages": LANG,
+                })
+                if r.status_code == 429 or r.status_code >= 500:
+                    if attempt == 0:
+                        wait = r.headers.get("Retry-After", "2")
+                        try:
+                            delay = max(0, float(wait))
+                        except ValueError:
+                            delay = 2
+                        if delay <= 10:
+                            time.sleep(delay)
+                            continue
+                r.raise_for_status()
+                body = r.json()
+                prods = body.get("Products") if isinstance(body, dict) else None
+                if not isinstance(prods, list):
+                    raise ValueError("DisplayCatalog retornou estrutura inválida")
+                break
+            except requests.RequestException:
+                if attempt == 0 and r is None:
+                    time.sleep(2)
+                    continue
+                raise
+        returned = {p.get("ProductId") for p in prods if isinstance(p, dict)}
+        if not set(batch).issubset(returned):
+            raise ValueError("DisplayCatalog incompleto; snapshots preservados para evitar falsas saídas")
         for p in prods:
             pid = p.get("ProductId")
             if not pid:

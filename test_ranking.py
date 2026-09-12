@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from bs4 import BeautifulSoup
 import steam_sale_ranker as r
 
@@ -94,6 +94,42 @@ class RankingTests(unittest.TestCase):
                     self.assertTrue(0 <= r.calc_score(pct,n,discount) <= 10)
         self.assertFalse(r._meta_fresh({"schema_version":2,"updated":"2020-01-01T00:00:00+00:00"}))
         self.assertFalse(r._meta_fresh({"schema_version":2,"updated":"2026-09-12T00:00:00"}))
+
+    def test_search_transient_retry_honors_retry_after(self):
+        limited = Mock(status_code=429, headers={"Retry-After":"9"})
+        unavailable = Mock(status_code=503, headers={})
+        success = Mock(status_code=200)
+        with patch.object(r.requests,"get",side_effect=[limited,unavailable,success]) as get, patch.object(r.time,"sleep") as sleep, patch.object(r,"_search_last_call",None):
+            self.assertIs(r._search_get({}), success)
+        self.assertEqual(get.call_count,3)
+        self.assertIn(unittest.mock.call(9.0),sleep.call_args_list)
+        self.assertIn(unittest.mock.call(60.0),sleep.call_args_list)
+
+    def test_search_retry_is_bounded(self):
+        response = Mock(status_code=429, headers={"Retry-After":"9999"})
+        response.raise_for_status.side_effect = r.requests.HTTPError("429",response=response)
+        self.assertEqual(r._retry_delay(response,0),120)
+        with patch.object(r.requests,"get",return_value=response) as get, patch.object(r.time,"sleep"), patch.object(r,"_search_last_call",None):
+            with self.assertRaises(r.requests.HTTPError):
+                r._search_get({})
+        self.assertEqual(get.call_count,3)
+
+    def test_search_calls_share_three_second_spacing(self):
+        with patch.object(r.requests,"get",return_value=Mock(status_code=200)), patch.object(r.time,"sleep") as sleep, patch.object(r.time,"monotonic",return_value=100), patch.object(r,"_search_last_call",None):
+            r._search_get({"sort_by":"Reviews_DESC"})
+            r._search_get({"sort_by":"Discount_DESC"})
+        sleep.assert_called_once_with(3.0)
+
+    def test_retry_after_http_date_and_fallback(self):
+        from datetime import datetime,timezone
+        class Clock(datetime):
+            @classmethod
+            def now(cls,tz=None):
+                return cls(2026,9,13,12,tzinfo=timezone.utc)
+        with patch.object(r,"datetime",Clock):
+            self.assertEqual(r._retry_delay(Mock(headers={"Retry-After":"Sun, 13 Sep 2026 12:01:00 GMT"}),0),60)
+        self.assertEqual(r._retry_delay(Mock(headers={"Retry-After":"garbage"}),0),30)
+        self.assertEqual(r._retry_delay(Mock(headers={"Retry-After":"NaN"}),1),60)
 
     def test_public_payload_exposes_filter_and_score_contract(self):
         r.TAG_NAMES["21"] = "Adventure"

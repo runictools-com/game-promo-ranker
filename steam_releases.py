@@ -11,6 +11,9 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import threading
+import time
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -29,6 +32,57 @@ SOURCES = {
 
 def now_utc():
     return datetime.now(timezone.utc)
+
+
+class SteamTransport:
+    """One shared request gate and cooldown for every collector thread."""
+    def __init__(self, request=None, sleep=None, monotonic=None, utc=None, interval=3.0):
+        self.request = request or requests.get
+        self.sleep = sleep or time.sleep
+        self.monotonic = monotonic or time.monotonic
+        self.utc = utc or now_utc
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.next_allowed = 0.0
+
+    def retry_delay(self, response, attempt):
+        value = response.headers.get("Retry-After", "")
+        try:
+            delay = float(value)
+        except (ValueError, TypeError):
+            try:
+                stamp = parsedate_to_datetime(value)
+                delay = (stamp - self.utc()).total_seconds()
+            except (ValueError, TypeError, OverflowError):
+                delay = 30.0 * (attempt + 1)
+        return min(120.0, max(self.interval, delay))
+
+    def get_json(self, url, params=None):
+        # Hold the lock across response and cooldown decisions. Another thread
+        # must never send while this one is deciding whether Steam asked to wait.
+        with self.lock:
+            for attempt in range(3):
+                remaining = self.next_allowed - self.monotonic()
+                while remaining > 0:
+                    self.sleep(min(60.0, remaining))
+                    remaining = self.next_allowed - self.monotonic()
+                try:
+                    response = self.request(url, params=params, timeout=(5, 20),
+                                            headers={"User-Agent": "GamePromo/2.0 (+https://gamepromo.runictools.com)"})
+                finally:
+                    self.next_allowed = self.monotonic() + self.interval
+                if response.status_code in (429, 503):
+                    self.next_allowed = self.monotonic() + self.retry_delay(response, min(attempt, 1))
+                    if attempt < 2:
+                        continue
+                response.raise_for_status()
+                return response.json()
+
+
+def exit_code(payload):
+    # Partial runs also fail the job so the runner exposes degraded collection,
+    # although useful fresh/cached data has already been saved atomically.
+    return 0 if payload.get("status") == "ok" and payload.get("tag_status") == "ok" else 1
 
 
 def parse_release_date(raw):
@@ -107,13 +161,11 @@ def collect(previous=None, now=None, fetch_json=None, max_pages=6, page_size=100
     previous = previous or {}
     max_pages = max(1, min(6, max_pages))
     page_size = max(1, min(100, page_size))
+    transport = SteamTransport()
     def fetch(url, params=None):
         if fetch_json:
             return fetch_json(url, params)
-        response = requests.get(url, params=params, timeout=(5, 20),
-                                headers={"User-Agent": "GamePromo/2.0 (+https://gamepromo.runictools.com)"})
-        response.raise_for_status()
-        return response.json()
+        return transport.get_json(url, params)
     tags = {}
     tag_status = "ok"
     try:
@@ -204,3 +256,4 @@ if __name__ == "__main__":
     payload = collect(previous=prior, max_pages=args.max_pages)
     save(payload, args.json)
     print(json.dumps({"count": len(payload["releases"]), "status": payload["status"], "sources": payload["sources"]}))
+    raise SystemExit(exit_code(payload))
