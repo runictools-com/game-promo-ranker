@@ -46,6 +46,7 @@ class CatarseTests(unittest.TestCase):
         self.assertEqual(rows[0]["pledged"], 40235)
         self.assertEqual(rows[0]["goal"], 26000)
         self.assertEqual(rows[0]["image"], project["thumbnail"])
+        self.assertGreater(datetime.fromisoformat(rows[0]["valid_until"]), now)
         for changes in ({"contributorsCount": 99}, {"contributorsCount": None}, {"status": "Successful"},
                         {"endDate": "2026-09-13T11:00:00Z"}, {"fundsCollected": 0}, {"isAdultContent": True}):
             self.assertEqual(collect(changes), [])

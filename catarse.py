@@ -123,7 +123,8 @@ def collect_catarse(html, now, fetch, qualify, image_url):
                    start_date=project.get("startDate"), end_date=project.get("endDate"), status="live",
                    description=project.get("summary", ""), tags=["boardgame"],
                    image=image_url(project.get("thumbnail", ""), url), image_source_url=url,
-                   boardgame_evidence=evidence, verified_at=now.isoformat(), shipping_br="unknown")
+                   boardgame_evidence=evidence, verified_at=now.isoformat(),
+                   valid_until=(now + timedelta(hours=30)).isoformat(), shipping_br="unknown")
         qualified = qualify(row, now=now, today=now.astimezone(timezone(timedelta(hours=-3))).date())
         if qualified:
             rows.append(qualified)
