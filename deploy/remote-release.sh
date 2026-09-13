@@ -13,8 +13,12 @@ git fetch origin main
 test "$(git rev-parse origin/main)" = "$expected"
 previous=$(git rev-parse HEAD)
 git merge --ff-only "$expected"
-docker tag steam-sale-app:latest "steam-sale-app:rollback-$previous"
-docker tag steam-gen:latest "steam-gen:rollback-$previous"
+if docker image inspect steam-sale-app:latest >/dev/null 2>&1; then
+  docker tag steam-sale-app:latest "steam-sale-app:rollback-$previous"
+fi
+if docker image inspect steam-gen:latest >/dev/null 2>&1; then
+  docker tag steam-gen:latest "steam-gen:rollback-$previous"
+fi
 docker compose -f docker-compose.prod.yml build --build-arg "VCS_REF=$expected" gamepromo
 docker build -f Dockerfile.gen --build-arg "VCS_REF=$expected" -t steam-gen:latest .
 test "$(git rev-parse HEAD)" = "$expected"
