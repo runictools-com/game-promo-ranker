@@ -52,9 +52,13 @@ def run(path, fetch=None, sleep=time.sleep, now=None):
     clock = lambda: now or datetime.now(timezone.utc)
     ids = known_appids(path.parent, history)
     ids = sorted(set(ids) | set(history.get("historical", {})), key=int)
-    report = dict(started_at=clock().isoformat(), status="running", total=len(ids), checked=0, imported=0, unavailable=0)
-    history["historical_run"] = report
     attempts = history.setdefault("historical_attempts", {})
+    total = len(ids)
+    today = clock().date().isoformat()
+    ids = [i for i in ids if str(attempts.get(i, {}).get('checked_at', ''))[:10] != today]
+    report = dict(started_at=clock().isoformat(), status="running", total=total, cached_today=total-len(ids),
+                  checked=0, imported=0, unavailable=0)
+    history["historical_run"] = report
     def request(batch):
         response = requests.post(ENDPOINT, json=dict(country="BR", apps=[int(x) for x in batch],
             subs=[], bundles=[], voucher=False, shops=[61]), timeout=(5, 40),
@@ -68,6 +72,10 @@ def run(path, fetch=None, sleep=time.sleep, now=None):
             if start:
                 sleep(3)
             result = request(batch)
+            # The source serializes an empty price map as [] when no requested
+            # app is covered (common in the last batch of unreleased games).
+            if isinstance(result, dict) and result.get("prices") == []:
+                result["prices"] = {}
             if not isinstance(result, dict) or not isinstance(result.get("prices"), dict):
                 raise ValueError("Invalid price response")
             checked = clock().isoformat()

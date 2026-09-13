@@ -56,6 +56,10 @@ class HistoricalImportTests(unittest.TestCase):
             self.assertEqual(report['status'], 'failed')
             self.assertEqual(len(read_history(p)['historical']), 50)
             self.assertEqual(read_history(p)['games']['51']['low_cents'], 1000)
+            report = run(p, fetch=lambda _: {'prices': []}, sleep=lambda _: None, now=NOW)
+            self.assertEqual(report['status'], 'ok')
+            self.assertEqual(report['cached_today'], 50)
+            self.assertEqual(report['unavailable'], 1)
 
 
 if __name__ == '__main__':
