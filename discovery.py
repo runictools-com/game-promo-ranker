@@ -18,12 +18,13 @@ import ipaddress
 
 from bs4 import BeautifulSoup
 import requests
+from catarse import collect_catarse
 
 SOURCES = [
     {"id": "meeplestarter", "name": "MeepleStarter", "url": "https://meeplestarter.com.br/", "kind": "boardgame", "mode": "automatic", "region": "BR"},
     {"id": "gamefound", "name": "Gamefound", "url": "https://gamefound.com/en/projects/search", "kind": "boardgame", "mode": "automatic", "region": "international"},
     {"id": "kickstarter", "name": "Kickstarter • videogames", "url": "https://www.kickstarter.com/discover/advanced?category_id=35&state=live&sort=magic", "kind": "indie", "mode": "automatic", "region": "international"},
-    {"id": "catarse", "name": "Catarse • jogos", "url": "https://www.catarse.me/explore?ref=ctrse_header&filter=games", "kind": "boardgame", "mode": "directory", "region": "BR"},
+    {"id": "catarse", "name": "Catarse • boardgames", "url": "https://www.catarse.com.br/category/Jogos?ref=ctrse_home_sidebar_link", "kind": "boardgame", "mode": "automatic", "region": "BR"},
 ]
 
 EVENT_SOURCES = [
@@ -464,7 +465,16 @@ def collect(now=None, fetch=None):
                 response = requests.get(source["url"], timeout=(5, 15), headers={"User-Agent": "GamePromo/2.0 (+https://gamepromo.runictools.com)"})
                 response.raise_for_status()
                 html = response.content.decode("utf-8", errors="replace")
-            rows = parsers[source["id"]](html, now)
+            if source["id"] == "catarse":
+                def detail_fetch(url):
+                    if fetch:
+                        return fetch(url)
+                    response = requests.get(url, timeout=(5, 15), headers={"User-Agent": "GamePromo/2.0 (+https://gamepromo.runictools.com)"})
+                    response.raise_for_status()
+                    return response.content.decode("utf-8")
+                rows = collect_catarse(html, now, detail_fetch, qualify_campaign, public_image_url)
+            else:
+                rows = parsers[source["id"]](html, now)
             return rows, dict(status, status="ok", count=len(rows), note="Amostra do catálogo público; não cobre todas as campanhas da plataforma.")
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
             return [], dict(status, status="unavailable", count=0, note="Coleta indisponível; consulte a fonte. Nenhuma campanha foi inferida.", error=type(exc).__name__)
@@ -495,7 +505,7 @@ def collect(now=None, fetch=None):
                 events=sorted(events, key=lambda x: x["start_date"]), event_sources=EVENT_SOURCES,
                 methodology="Só campanhas abertas, financiadas e com pelo menos 100 apoios BR ou 300 internacionais. Nota: 80% amplitude de apoiadores, 20% financiamento com saturação; não é avaliação do jogo nem garantia de entrega.",
                 indie_methodology="Primeira página de mais bem avaliados do itch.io, pelo menos 300 avaliações e média 4,5/5. Média ajustada com 50 votos prévios de 4/5. Não são avaliações Steam nem campanhas; preço não coletado. Conteúdo adulto explícito no catálogo é excluído; classificação completa pode não estar disponível.",
-                coverage="MeepleStarter e Gamefound: amostra automática. Kickstarter: tentativa pública, pode bloquear coleta. Catarse: diretório. Indies: primeira página itch.io. Eventos: calendário Eu, BR em JSON-LD e curadoria datada; cobertura parcial do Brasil.")
+                coverage="MeepleStarter e Gamefound: amostra automática. Kickstarter: tentativa pública, pode bloquear coleta. Catarse: amostra da categoria Jogos, apenas boardgames e jogos de cartas com evidência na campanha; exclui RPG, digital e late pledge. Indies: primeira página itch.io. Eventos: calendário Eu, BR em JSON-LD e curadoria datada; cobertura parcial do Brasil.")
 
 
 def save(payload, path):
