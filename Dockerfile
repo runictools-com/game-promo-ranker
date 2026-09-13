@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Código da app + assets do frontend
-COPY app.py favicon.svg ./
+COPY app.py gamepass_view.py favicon.svg ./
 COPY static/ ./static/
 
 ARG VCS_REF=unknown

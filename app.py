@@ -28,6 +28,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 from flask import Flask, jsonify, request, send_from_directory
+from gamepass_view import enrich_gamepass
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -139,9 +140,17 @@ def api_gamepass():
             "error": "catalogo Game Pass ainda nao coletado — rode o cron (gamepass.py)",
             "added": [], "removed": [], "catalog": [],
         }), 503
-    directory = os.path.dirname(GAMEPASS_FILE) or "."
-    return send_from_directory(directory, os.path.basename(GAMEPASS_FILE),
-                               mimetype="application/json")
+    with open(GAMEPASS_FILE, encoding="utf-8-sig") as handle:
+        payload = json.load(handle)
+    prices_file = os.environ.get('GAMEPASS_PRICES_FILE', os.path.join(os.path.dirname(GAMEPASS_FILE), 'gamepass_prices.json'))
+    try:
+        with open(prices_file, encoding='utf-8-sig') as handle:
+            comparison = json.load(handle)
+    except (OSError, ValueError):
+        comparison = {}
+    response = jsonify(enrich_gamepass(payload, comparison))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 # ─── /api/steam-user ──────────────────────────────────────────────────────────
 

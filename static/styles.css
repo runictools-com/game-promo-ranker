@@ -442,6 +442,12 @@ td.low-ever .save-pct { color: var(--green); font-weight: 800; margin-left: 3px;
 .gp-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: var(--shadow); }
 .gp-cover { aspect-ratio: 16/9; background: var(--surface-2); }
 .gp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gp-product-link { color: inherit; text-decoration: none; }
+.gp-price { margin-top: auto; padding: 0 9px 12px; display: flex; flex-direction: column; gap: 7px; font-size: .78rem; line-height: 1.4; }
+.gp-steam-price { color: var(--text); font-weight: 700; }
+.gp-price-unknown { color: var(--text-dim); }
+.gp-above-subscription, .gp-above-subscription:hover { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--surface)); }
+.gp-value-label { color: var(--green); font-weight: 700; }
 .gp-title { font-size: .82rem; font-weight: 700; padding: 8px 9px 2px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gp-dev { font-size: .72rem; color: var(--text-dim); padding: 0 9px 9px; }
 

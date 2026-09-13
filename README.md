@@ -32,6 +32,12 @@ Falha ou coleta Steam vazia preserva o snapshot anterior e retorna erro ao orque
 
 ## Radar e agenda
 
+### PC Game Pass e preço Steam
+
+A aba mostra a mensalidade regular brasileira do PC Game Pass e o preço atual Steam dos títulos com correspondência exata de nome/edição. Cards verdes exigem preço BRL estritamente maior que um mês, preço e disponibilidade conferidos nas últimas 36 horas e mensalidade verificada nos últimos 30 dias. Preço desconhecido ou antigo não produz destaque. Compra Steam e acesso temporário pela assinatura são apresentados como opções distintas.
+
+`gamepass_prices.py` verifica IDs ativos no catálogo Microsoft mesmo quando DisplayCatalog limita a atualização de títulos/capas. Reutiliza preços Steam recentes e consulta jogos restantes, com cache e limite de consultas; não compara edições diferentes por aproximação de nome. A coleta roda diariamente após o catálogo. `deploy/ship.ps1 -GamepassPricesOnly` publica e executa só essa atualização.
+
 A aba de financiamento coleta amostras públicas de Meeplestarter, Gamefound e Kickstarter. Catarse aparece como diretório para consulta manual. Uma campanha precisa estar ativa, ter atingido a meta e reunir pelo menos 100 apoiadores no Brasil ou 300 internacionalmente. O score privilegia a quantidade de apoiadores e limita o efeito de metas simbólicas. Tração não comprova qualidade do jogo nem entrega futura. Frete, impostos, idioma e atendimento ao Brasil precisam ser conferidos na campanha.
 
 O radar também separa jogos disponíveis do itch.io com avaliações suficientes; não os apresenta como campanhas. Fontes bloqueadas ou sem dados verificáveis aparecem com sua limitação. Campanhas e indies vencidos são ocultados até nova coleta.

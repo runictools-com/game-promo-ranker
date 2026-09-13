@@ -638,8 +638,12 @@ async function loadEpicGames() {
 // ─── Game Pass ──────────────────────────────────────────────────────────────
 function gpCard(g) {
   const cover = g.cover ? `<img src="${escapeHtml(g.cover)}" alt="" loading="lazy">` : '<div class="free-noimg">🎮</div>';
-  return `<a class="gp-card" href="${escapeHtml(g.url)}" target="_blank" rel="noopener" title="${escapeHtml(g.title)}">
-      <div class="gp-cover">${cover}</div><div class="gp-title">${escapeHtml(g.title)}</div><div class="gp-dev">${escapeHtml(g.dev || "")}</div></a>`;
+  const money = cents => (cents / 100).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+  const price = g.steam && Number.isInteger(g.steam.price_cents) ?
+    `<a class="gp-steam-price" href="https://store.steampowered.com/app/${escapeHtml(String(g.steam.appid))}/?cc=br" target="_blank" rel="noopener">Steam: ${money(g.steam.price_cents)}</a>` : '<span class="gp-price-unknown">Preço Steam não confirmado</span>';
+  const advantage = g.above_subscription ? `<span class="gp-value-label">Mais que 1 mês de PC Game Pass<br>${money(g.difference_cents)} acima da mensalidade</span>` : '';
+  return `<article class="gp-card${g.above_subscription ? ' gp-above-subscription' : ''}"><a class="gp-product-link" href="${escapeHtml(g.url)}" target="_blank" rel="noopener" title="${escapeHtml(g.title)}">
+      <div class="gp-cover">${cover}</div><div class="gp-title">${escapeHtml(g.title)}</div></a><div class="gp-dev">${escapeHtml(g.dev || "")}</div><div class="gp-price">${price}${advantage}</div></article>`;
 }
 function gpSection(title, items, cls) {
   if (!items || !items.length) return "";
@@ -647,7 +651,21 @@ function gpSection(title, items, cls) {
 }
 function renderGamepass() {
   if (!GP_PAYLOAD) return;
-  el("gp-subtitle").textContent = "Atualizado em " + (GP_PAYLOAD.generated_at_human || "—") + " · " + (GP_PAYLOAD.total || 0) + " jogos no catálogo";
+  const membershipDate = !GP_PAYLOAD.membership_stale && GP_PAYLOAD.membership_checked_at ?
+    new Date(GP_PAYLOAD.membership_checked_at).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo'}) : null;
+  el("gp-subtitle").textContent = (membershipDate ? "Disponibilidade conferida em " + membershipDate : "Último catálogo: " + (GP_PAYLOAD.generated_at_human || "—")) + " · " + (GP_PAYLOAD.total || 0) + " jogos";
+  const sub = GP_PAYLOAD.subscription;
+  if (sub && Number.isInteger(sub.monthly_cents)) {
+    const monthly = (sub.monthly_cents/100).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
+    const checked = sub.checked_at ? new Date(sub.checked_at).toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) : 'não informada';
+    el('gp-subscription').innerHTML = `<b>PC Game Pass: ${monthly}/mês</b> · <a href="https://www.xbox.com/pt-BR/games/store/game-pass/CFQ7TTC0KGQ8" target="_blank" rel="noopener">Preço oficial</a> (verificado ${escapeHtml(checked)}).<br>
+      Verde = preço atual na Steam maior que uma mensalidade. ${GP_PAYLOAD.priced_count || 0} jogos com preço confirmado; ${GP_PAYLOAD.highlighted_count || 0} destacados.<br>
+      A assinatura dá acesso enquanto estiver ativa e o jogo permanecer no catálogo; não equivale à compra na Steam.
+      ${sub.stale ? '<br>Mensalidade precisa de nova verificação; destaques suspensos.' : ''}
+      ${GP_PAYLOAD.membership_stale ? '<br>Disponibilidade do catálogo precisa de nova verificação; destaques suspensos.' : ''}
+      ${GP_PAYLOAD.metadata_stale && !GP_PAYLOAD.membership_stale ? '<br>Disponibilidade conferida na Microsoft; títulos e capas usam o último catálogo disponível.' : ''}`;
+    if (GP_PAYLOAD.unresolved_membership_count > 0) el('gp-subscription').append(document.createTextNode(` ${GP_PAYLOAD.unresolved_membership_count} produtos aguardam detalhes da Microsoft.`));
+  }
   const q = ((el("gp-search") || {}).value || "").trim().toLowerCase();
   let catalog = GP_PAYLOAD.catalog || [];
   if (q) catalog = catalog.filter((g) => String(g.title || "").toLowerCase().includes(q));
