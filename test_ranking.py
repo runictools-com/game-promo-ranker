@@ -19,8 +19,19 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(r.calc_score(100, 10, 90), 0)
         self.assertGreater(r.calc_score(95, 500, 70), r.calc_score(75, 100000, 90))
         self.assertGreater(r.calc_score(95, 5000, 70), r.calc_score(95, 100, 70))
-        self.assertLess(r.calc_score(95, 100000, 70)-r.calc_score(95, 10000, 70), .1)
+        self.assertGreater(r.calc_score(95, 100000, 70)-r.calc_score(95, 10000, 70), .5)
+        self.assertLess(r.calc_score(95, 1000000, 70)-r.calc_score(95, 100000, 70), .1)
         self.assertGreater(r.calc_score(95, 500, 80), r.calc_score(95, 500, 20))
+
+    def test_balances_volume_positive_reviews_and_discount(self):
+        self.assertGreater(r.calc_score(96, 60000, 80), r.calc_score(100, 100, 90))
+        self.assertGreater(r.calc_score(98, 6000, 90), r.calc_score(85, 100000, 50))
+        self.assertGreater(r.calc_score(95, 30000, 80), r.calc_score(95, 30000, 30))
+        self.assertGreater(r.calc_score(95, 30000, 80), r.calc_score(70, 30000, 80))
+        game = dict(pct_positive=95, total_reviews=30000, discount=80)
+        r.update_score_details(game)
+        self.assertEqual(game['score'], r.calc_score(95, 30000, 80))
+        self.assertEqual(game['score_version'], 3)
 
     def test_filter_explicit_but_keep_mature_and_niche(self):
         self.assertIsNone(r._parse_row(row(tags="[9130]")))
@@ -137,7 +148,7 @@ class RankingTests(unittest.TestCase):
         payload = r.build_json_payload({game["block"]: [game]}, 1)
         saved = payload["blocks"][0]["games"][0]
         self.assertEqual(saved["tags"], ["Adventure"])
-        self.assertEqual(saved["score_version"], 2)
+        self.assertEqual(saved["score_version"], 3)
         self.assertEqual(saved["currency"], "BRL")
         self.assertIn("categories", saved)
 

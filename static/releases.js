@@ -27,7 +27,7 @@ function releaseNormalize(value) { return String(value || "").normalize("NFD").r
 function releaseCard(game) {
   const url = releaseHttps(game.url);
   const tags = releaseTags(game).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
-  return `<article class="free-card"><div class="free-body"><h3 class="free-title">${escapeHtml(game.name || "Jogo sem título")}</h3>
+  return `<article class="free-card radar-card">${radarCover(game)}<div class="free-body"><h3 class="free-title">${escapeHtml(game.name || "Jogo sem título")}</h3>
     <p class="free-meta">${escapeHtml(game.release_date_raw || releaseDateLabel(game.release_date))}</p>
     ${tags ? `<div class="tag-row">${tags}</div>` : ""}
     ${game.status === "scheduled" ? '<p class="free-sub">Lançamento planejado · data sujeita a alteração</p>' : game.status === "released" ? '<p class="free-sub">Lançado</p>' : ""}

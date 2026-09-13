@@ -42,7 +42,7 @@
   <!-- ═══ ABA: Promoções Steam ═══════════════════════════════════════════ -->
   <section id="tab-deals">
     <div class="formula">
-      score 0–10 = Wilson 95% × oferta (desconto e histórico BR observado); sem bônus de fama
+      score 0–10 combina desconto, volume de reviews e percentual positivo com confiança estatística
     </div>
 
     <!-- Busca de perfil Steam -->
@@ -177,12 +177,13 @@
   </section>
 
   <footer>
-    <b>Score 0–10</b> = 10 × qualidade × (0,60 + 0,40 × desconto) × fator histórico. Qualidade = limite inferior de
+    <b>Score 0–10</b> = 10 × qualidade² × volume × (0,40 + 0,60 × desconto) × fator histórico. Qualidade = limite inferior de
     Wilson (95%) das reviews positivas — junta "% positivas" e "nº de reviews" com confiança
     estatística (95% de 200 reviews vale menos que 95% de 200 mil). O selo de preço compara o
     valor atual com o <b>menor observado BRL</b>. Desconto entra como fração de 0 a 1; o fator histórico
     varia de 0,90 a 1,00 conforme a proximidade do menor preço, após duas datas observadas.
-    Sem histórico suficiente ele é neutro. Exigimos ao menos 100 avaliações e não aplicamos bônus de fama.
+    Sem histórico suficiente ele é neutro. Volume = 0,50 + 0,50 × min(1, log10(1 + reviews) / 5):
+    mais avaliações contam explicitamente, com crescimento limitado em 100 mil. Exigimos ao menos 100 avaliações.
     Favoritos, gostos e tema ficam salvos no seu navegador.
     Wishlist comparada via endpoint público da Steam (sem API key); biblioteca é opcional e usa
     uma API key só nesta requisição — nada é armazenado no servidor.

@@ -14,6 +14,7 @@ import re
 import tempfile
 import os
 from urllib.parse import urljoin, urlparse
+import ipaddress
 
 from bs4 import BeautifulSoup
 import requests
@@ -80,6 +81,92 @@ def money_br(text):
     return float(re.sub(r"[^\d,.]", "", text).replace(".", "").replace(",", ".") or 0)
 
 
+def public_image_url(value, base_url=""):
+    """Validate an image reference without downloading arbitrary image URLs."""
+    if isinstance(value, list):
+        return next((url for x in value if (url := public_image_url(x, base_url))), "")
+    if isinstance(value, dict):
+        value = value.get("url") or value.get("contentUrl")
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    url = urljoin(base_url, value.strip())
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    if parsed.scheme != "https" or parsed.username or parsed.password or port not in (None, 443):
+        return ""
+    if "." not in host or host.endswith((".local", ".localhost", ".internal")):
+        return ""
+    try:
+        ipaddress.ip_address(host)
+        return ""
+    except ValueError:
+        return url
+
+
+EVENT_IMAGE_HOSTS = {"www.brasilgameshow.com.br", "brasilgameshow.com.br", "ccxp.com.br", "www.ccxp.com.br",
+                     "animextreme.com.br", "www.animextreme.com.br", "animefriends.com.br", "www.animefriends.com.br",
+                     "championships.pokemon.com", "diversaooffline.com.br", "www.diversaooffline.com.br"}
+
+
+def event_preview_image(url, fetch=None):
+    """Fetch only explicitly known official event hosts, including redirects."""
+    for _ in range(3):
+        if urlparse(url).hostname not in EVENT_IMAGE_HOSTS or not public_image_url(url):
+            return ""
+        if fetch:
+            html = fetch(url)
+        else:
+            response = requests.get(url, timeout=(3, 7), allow_redirects=False,
+                                    headers={"User-Agent": "GamePromo/2.0 (+https://gamepromo.runictools.com)"})
+            if response.status_code in (301, 302, 303, 307, 308):
+                url = urljoin(url, response.headers.get("Location", ""))
+                continue
+            response.raise_for_status()
+            html = response.content.decode("utf-8", errors="replace")
+        soup = BeautifulSoup(html, "html.parser")
+        for selector in ('meta[property="og:image"]', 'meta[name="twitter:image"]', 'meta[property="og:image:secure_url"]'):
+            meta = soup.select_one(selector)
+            image = public_image_url(meta.get("content", ""), url) if meta else ""
+            if image:
+                return image
+        if urlparse(url).hostname == "championships.pokemon.com":
+            # Official SPA serializes the location preview in its public page.
+            # Match the current edition and city, never another event's image.
+            edition = re.search(r"/(\d{4})/([a-z-]+)(?:/|$)", urlparse(url).path)
+            if edition:
+                match = re.search(r'"image_s"\s*:\s*"([^"<>]*' + re.escape(edition[1] + "-" + edition[2]) + r'[^"<>]*\.(?:webp|png|jpg))"', html)
+                if match:
+                    return public_image_url(match[1], url)
+        if urlparse(url).hostname in {"diversaooffline.com.br", "www.diversaooffline.com.br"}:
+            # The official site's actual brand image is a truthful preview
+            # when no event poster/OpenGraph metadata is published.
+            logo = soup.select_one('img[src*="logo-site-doff"]')
+            if logo:
+                return public_image_url(logo.get("src"), url)
+        return ""
+    return ""
+
+
+def enrich_event_images(events, fetch=None):
+    def enrich(event):
+        result = dict(event)
+        try:
+            image = event_preview_image(event["url"], fetch)
+            if image:
+                logo = "logo" in urlparse(image).path.lower()
+                result.update(image=image, image_source_url=event["url"], image_kind="official_logo" if logo else "official_preview",
+                              image_caption="Marca do evento; não representa a arte da edição." if logo else "Prévia publicada na fonte oficial.")
+        except (requests.RequestException, ValueError, TypeError):
+            pass
+        return result
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        return list(pool.map(enrich, events))
+
+
 def qualify_campaign(item, today=None, now=None):
     """Reject expired, small-crowd and missing-proof campaigns.
 
@@ -138,6 +225,9 @@ def parse_meeplestarter(html, now=None):
         if re.search(r"late pledge|pré-venda|pre-venda", name, re.I):
             continue
         description = card.select_one(".projeto-resumo")
+        wrapper = card.find_parent(class_="cartao-projeto")
+        thumbnail = wrapper.select_one(".projeto-thumb img") if wrapper else None
+        image = public_image_url((thumbnail.get("src") or thumbnail.get("data-src")) if thumbnail else "", url)
         desc = description.get_text(" ", strip=True) if description else ""
         if re.search(r"\bRPG\b", name + " " + desc) and not re.search(r"tabuleiro|card game", desc, re.I):
             kind = "rpg"
@@ -147,7 +237,8 @@ def parse_meeplestarter(html, now=None):
                     kind=kind, region="BR", currency="BRL", pledged=money_br(raised.text), goal=money_br(goal.text),
                     backers=int(re.sub(r"\D", "", backers.text)), start_date=datetime.strptime(dates[0], "%d/%m/%Y").date().isoformat(),
                     end_date=datetime.strptime(dates[1], "%d/%m/%Y").date().isoformat(), status="live", description=desc,
-                    tags=[kind], verified_at=now.isoformat(), valid_until=(now + timedelta(hours=30)).isoformat())
+                    tags=[kind], image=image, image_source_url=url,
+                    verified_at=now.isoformat(), valid_until=(now + timedelta(hours=30)).isoformat())
         qualified = qualify_campaign(item, brazil_date(now), now)
         if qualified:
             items[url] = qualified
@@ -313,7 +404,8 @@ def parse_event_jsonld(html, source_url, now=None):
                              name=name, start_date=start.isoformat(), end_date=end.isoformat(), city=city, state=state,
                              country="BR", venue=place, tags=tags, url=url, source_url=source_url,
                              verified_at=now.isoformat(), valid_until=(now + timedelta(days=3)).isoformat(),
-                             collection="aggregated", stale=False, days_until=(start - brazil_date(now)).days,
+                             collection="aggregated", image=public_image_url(raw.get("image"), source_url),
+                             image_source_url=source_url, stale=False, days_until=(start - brazil_date(now)).days,
                              note="Data extraída de calendário público; confirme programação e ingresso na fonte oficial."))
     return rows
 
@@ -388,11 +480,16 @@ def collect(now=None, fetch=None):
                          (x["name"].casefold() in event["name"].casefold() or event["name"].split()[0].casefold() in x["name"].casefold())), None)
         if existing:
             existing.update(calendar_checked_at=now.isoformat(), calendar_source_url=event["source_url"])
+            if event.get("image"):
+                logo = "logo" in urlparse(event["image"]).path.lower()
+                existing.update(image=event["image"], image_source_url=event["source_url"], image_kind="calendar_logo" if logo else "calendar_preview",
+                                image_caption="Marca do evento; não representa a arte da edição." if logo else "Prévia publicada no calendário da fonte.")
             if existing["end_date"] == event["end_date"]:
                 existing.update(editorial_verified_at=existing["verified_at"], verified_at=now.isoformat(),
                                 valid_until=event["valid_until"], stale=False, collection="curated+calendar")
         else:
             events.append(event)
+    events = enrich_event_images(events, fetch)
     return dict(updated_at=now.isoformat(), valid_until=(now + timedelta(hours=30)).isoformat(), campaigns=campaigns,
                 sources=[s for _, s in results], indie_games=indie, extra_sources=extra_statuses,
                 events=sorted(events, key=lambda x: x["start_date"]), event_sources=EVENT_SOURCES,

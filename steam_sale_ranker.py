@@ -124,11 +124,17 @@ def quality_lower_bound(pct: float, total: int) -> float:
     return (p + z*z/(2*n) - z*math.sqrt((p*(1-p)+z*z/(4*n))/n))/(1+z*z/n)
 
 
+def review_volume_factor(total: int) -> float:
+    """Volume explícito, logarítmico e limitado: 100 mil reviews já saturam."""
+    return 0.50 + 0.50 * min(1.0, math.log10(1 + max(0, total)) / 5)
+
+
 def calc_score(pct: int, total: int, discount: int) -> float:
     """Qualidade conservadora × oportunidade; desconto não resgata qualidade ruim."""
     if total < MIN_REVIEWS:
         return 0.0
-    return 10 * quality_lower_bound(pct, total) * (0.60 + 0.40 * max(0, min(discount, 100))/100)
+    return (10 * quality_lower_bound(pct, total)**2 * review_volume_factor(total)
+            * (0.40 + 0.60 * max(0, min(discount, 100))/100))
 
 
 # Tag Hentai e descritor 3 (Adult Only Sexual Content).
@@ -356,7 +362,7 @@ def _parse_row(row) -> dict | None:
             "genres": [], "categories": [], "currency": "BRL", "country": "BR",
             "quality_score": round(10 * quality_lower_bound(pct_positive, total_reviews), 3),
             "confidence": "high" if total_reviews >= 1000 else "moderate",
-            "score_version": 2,
+            "score_version": 3,
             "name":          name,
             "appid":         appid,
             "discount":      discount,
@@ -482,13 +488,15 @@ def update_score_details(game: dict, proximity: float | None = None) -> None:
     quality = quality_lower_bound(game.get("pct_positive", 0), game.get("total_reviews", 0))
     discount = max(0, min(game.get("discount", 0), 100)) / 100
     history_factor = 1.0 if proximity is None else 0.90 + 0.10 * max(0, min(proximity, 1))
-    deal = (0.60 + 0.40 * discount) * history_factor
-    game.update(quality_score=round(quality * 10, 3), deal_score=round(deal * 10, 3),
-                score=10 * quality * deal if game.get("total_reviews", 0) >= MIN_REVIEWS else 0,
+    deal = (0.40 + 0.60 * discount) * history_factor
+    volume = review_volume_factor(game.get("total_reviews", 0))
+    game.update(quality_score=round(quality * 10, 3), deal_score=round(deal * 10, 3), score_version=3,
+                score=calc_score(game.get("pct_positive", 0), game.get("total_reviews", 0), game.get("discount", 0)) * history_factor,
                 hidden_gem=bool(MIN_REVIEWS <= game.get("total_reviews", 0) < 5000 and quality >= 0.85),
                 score_components={"wilson_lower_bound": round(quality, 6), "discount_fraction": discount,
+                                  "review_volume_factor": volume, "quality_exponent": 2,
                                   "observed_price_proximity": proximity, "history_factor": history_factor},
-                score_rationale="Wilson 95% mede confiança nas avaliações, não qualidade absoluta. "
+                score_rationale="Qualidade Wilson ao quadrado × desconto × volume logarítmico de reviews (limitado em 100 mil). "
                     + ("Histórico BR insuficiente: efeito neutro." if proximity is None else
                        "Oportunidade ajustada pela distância ao menor BRL observado em pelo menos duas datas."))
 
@@ -952,7 +960,7 @@ def generate_html(by_block: dict[str, list[dict]], total_collected: int) -> str:
   <h1>Game Promo Ranker</h1>
   <div class="subtitle">Gerado em {now}  —  {total_collected} jogos coletados</div>
   <div class="formula">
-    score 0–10 = qualidade(Wilson 95%) × (0.60 + 0.40 × desconto)
+    score 0–10 = 10 × Wilson95² × volume de reviews × (0.40 + 0.60 × desconto) × histórico
   </div>
   <div class="legend">
     <span><span class="sw new"></span> <b>NEW</b> — entrou em promoção hoje (vs. ontem)</span>

@@ -18,7 +18,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir "requests>=2.31" "beautifulsoup4>=4.12"
 
 COPY steam_sale_ranker.py free_games.py epic_deals.py gamepass.py ./
-COPY discovery.py steam_releases.py refresh_daily.py ./
+COPY discovery.py steam_releases.py refresh_daily.py rerank_snapshot.py ./
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision=$VCS_REF

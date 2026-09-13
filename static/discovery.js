@@ -12,6 +12,24 @@ function radarLink(url) {
   try { const parsed = new URL(url); return parsed.protocol === "https:" ? escapeHtml(parsed.href) : "#"; }
   catch { return "#"; }
 }
+function radarCover(item) {
+  const image = radarLink(item.image || item.header_img || "");
+  const name = escapeHtml(item.name || "Conteúdo");
+  return `<div class="free-cover radar-cover"><span class="radar-noimg"${image !== "#" ? ' hidden' : ""}>Prévia indisponível<span>${name}</span></span>${image !== "#" ? `<img src="${image}" alt="Prévia de ${name}" loading="lazy" decoding="async" data-radar-image>` : ""}</div>`;
+}
+function radarDescription(text) {
+  const value = String(text || "");
+  if (!value) return "";
+  return value.length > 180
+    ? `<details class="free-sub radar-description"><summary>${escapeHtml(value.slice(0, 160).trim())}… <span>ler descrição completa</span></summary><p>${escapeHtml(value)}</p></details>`
+    : `<p class="free-sub radar-description">${escapeHtml(value)}</p>`;
+}
+document.addEventListener("error", event => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || !image.hasAttribute("data-radar-image")) return;
+  image.hidden = true;
+  image.closest(".radar-cover")?.querySelector(".radar-noimg")?.removeAttribute("hidden");
+}, true);
 function radarDate(value) {
   if (!value) return "não informado";
   const date = new Date(value.length === 10 ? value + "T12:00:00Z" : value);
@@ -40,11 +58,11 @@ function renderRadar() {
     radarNormalize(c.name + " " + (c.tags || []).join(" ")).includes(text));
   el("crowd-count").textContent = `${campaigns.length} campanhas com tração verificada`;
   el("crowd-root").innerHTML = campaigns.length ? `<div class="free-grid radar-grid">${campaigns.map(c =>
-    `<article class="free-card"><div class="free-body"><h2 class="free-title">${escapeHtml(c.name)}</h2>
+    `<article class="free-card radar-card">${radarCover(c)}<div class="free-body"><h2 class="free-title">${escapeHtml(c.name)}</h2>
       <div class="free-sub">${escapeHtml(c.source)} · ${c.region === "BR" ? "Brasil" : "Internacional"} · ${escapeHtml(c.kind)}</div>
       <p>${radarNumber(c.funded_pct)}% da meta · ${radarNumber(c.backers)} apoiadores</p>
       <p class="free-meta">Encerra ${radarDate(c.end_date)} · tração ${radarNumber(c.score)}/100</p>
-      <p class="free-sub">${escapeHtml(c.description || "")}</p>
+      ${radarDescription(c.description)}
       <p class="free-sub">${escapeHtml(c.brazil_note || "Entrega e frete para o Brasil não confirmados.")}</p>
       <p class="free-sub">Verificado ${radarDate(c.verified_at)} · ${(c.tags || []).map(escapeHtml).join(" · ")}</p>
       <a class="free-btn" href="${radarLink(c.url)}" target="_blank" rel="noopener noreferrer">Ver campanha e condições</a>
@@ -54,9 +72,9 @@ function renderRadar() {
   const indies = (RADAR.indie_games || []).filter(g => radarNormalize(g.name + " " + (g.tags || []).join(" ")).includes(text));
   el("indie-methodology").textContent = RADAR.indie_methodology || "Jogos já disponíveis, separados das campanhas de financiamento.";
   el("indie-root").innerHTML = indies.length ? `<div class="free-grid radar-grid">${indies.map(g =>
-    `<article class="free-card"><div class="free-body"><h3 class="free-title">${escapeHtml(g.name)}</h3>
+    `<article class="free-card radar-card">${radarCover(g)}<div class="free-body"><h3 class="free-title">${escapeHtml(g.name)}</h3>
       <p class="free-meta">${radarNumber(g.rating)}/5 · ${radarNumber(g.reviews)} avaliações · nota ajustada ${radarNumber(g.score)}/100</p>
-      <p class="free-sub">${escapeHtml(g.description || "")} ${(g.tags || []).map(escapeHtml).join(" · ")}</p>
+      ${radarDescription(g.description)}<p class="free-sub">${(g.tags || []).map(escapeHtml).join(" · ")}</p>
       <p class="free-sub">${escapeHtml(g.note || "Confira preço, idioma e plataformas na página do criador.")}</p>
       <a class="free-btn" href="${radarLink(g.url)}" target="_blank" rel="noopener noreferrer">Conhecer no itch.io</a>
     </div></article>`).join("")}</div>` : '<p class="empty-tier">Nenhum indie verificado com esses filtros.</p>';
@@ -66,14 +84,15 @@ function renderRadar() {
     (!tag || (e.tags || []).includes(tag)) && (!from || e.end_date.slice(0,10) >= from) && (!until || e.start_date.slice(0,10) <= until));
   el("event-count").textContent = `${events.length} eventos encontrados`;
   el("events-root").innerHTML = events.length ? `<div class="free-grid radar-grid">${events.map(e =>
-    `<article class="free-card"><div class="free-body"><h2 class="free-title">${escapeHtml(e.name)}</h2>
+    `<article class="free-card radar-card">${radarCover(e)}<div class="free-body"><h2 class="free-title">${escapeHtml(e.name)}</h2>
+      ${e.image_kind?.includes("logo") ? `<p class="free-sub">${escapeHtml(e.image_caption || "Marca do evento; não representa a arte da edição.")}</p>` : ""}
       <p class="free-meta">${radarDate(e.start_date)}${e.start_date !== e.end_date ? " a " + radarDate(e.end_date) : ""}</p>
       <p>${escapeHtml(e.city)} · ${escapeHtml(e.state || "UF não informada")}<br>${escapeHtml(e.venue || "Local a confirmar")}</p>
       <p class="free-sub">${(e.tags || []).map(escapeHtml).join(" · ")}</p>
       <p class="free-sub">${e.stale ? "Informação antiga: confirmar programação. " : ""}${escapeHtml(e.note || "")}</p>
       <p class="free-sub">${e.collection === "aggregated" ? "Calendário público" : "Curadoria"} · verificado ${radarDate(e.verified_at)}</p>
-      <a class="free-btn" href="${radarLink(e.url || e.source_url)}" target="_blank" rel="noopener noreferrer">Ver evento e ingressos</a>
       <a class="free-sub" href="${radarLink(e.source_url)}" target="_blank" rel="noopener noreferrer">Fonte da informação</a>
+      <a class="free-btn" href="${radarLink(e.url || e.source_url)}" target="_blank" rel="noopener noreferrer">Ver evento e ingressos</a>
     </div></article>`).join("")}</div>` : '<p class="empty-tier">Nenhum evento com esses filtros. A cobertura é parcial; isso não significa que não existam eventos na região.</p>';
 }
 async function loadRadar() {

@@ -7,13 +7,14 @@ Aplicação Python/Flask para descobrir promoções Steam, campanhas de financia
 
 ## Promoções Steam
 
-O ranking global usa avaliações e oportunidade de preço, sem bônus de fama:
+O ranking global equilibra desconto, quantidade de reviews e percentual positivo:
 
 ```text
-score = 10 × Wilson95 × (0.60 + 0.40 × desconto) × fator_histórico
+volume = 0.50 + 0.50 × min(1, log10(1 + reviews) / 5)
+score = 10 × Wilson95² × volume × (0.40 + 0.60 × desconto) × fator_histórico
 ```
 
-`Wilson95` é o limite inferior de confiança da proporção de avaliações positivas. O número de avaliações entra nessa confiança, sem um segundo multiplicador de popularidade. Isso reduz o peso de amostras pequenas; não mede qualidade absoluta nem elimina manipulação de reviews. Entram jogos com pelo menos **100 avaliações** e **15% de desconto**.
+`Wilson95` é o limite inferior de confiança da proporção de avaliações positivas. Ao quadrado, exige boa aprovação para disputar o topo. O volume de reviews tem peso explícito e logarítmico, saturado em 100 mil: jogos muito jogados recebem mais peso sem crescimento ilimitado. A versão 3 corrige o excesso de jogos com pouca evidência no topo da versão 2. Não mede qualidade absoluta nem elimina manipulação de reviews. Entram jogos com pelo menos **100 avaliações** e **15% de desconto**.
 
 O desconto usa uma fração entre 0 e 1. Quando existem pelo menos duas datas de preço BRL observado, o fator histórico é `0.90 + 0.10 × min(1, menor_observado / preço_atual)`. Sem histórico suficiente, o fator é neutro: `1`. Qualidade Wilson, oferta e componentes ficam separados no JSON.
 

@@ -477,3 +477,28 @@ footer b { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto; }
 }
+
+/* Radar previews follow the existing Steam cover proportions and theme. */
+#tab-crowd .free-grid, #tab-events .free-grid, #tab-releases .free-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 268px), 1fr));
+  align-items: stretch;
+}
+.radar-card { min-width: 0; }
+.radar-cover { aspect-ratio: 460/215; flex: 0 0 auto; overflow: hidden; }
+.radar-cover img { width: 100%; height: 100%; object-fit: contain; background: var(--surface-2); }
+.radar-cover [hidden] { display: none !important; }
+.radar-noimg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--text-dim); text-align: center; font-size: .78rem; }
+.radar-noimg span { color: var(--text); font-weight: 700; }
+.radar-card .free-body { gap: 10px; padding: 14px; min-width: 0; }
+.radar-card .free-body p, .radar-card .free-title { margin: 0; overflow-wrap: anywhere; }
+.radar-card .free-title { line-height: 1.4; }
+.radar-card .free-sub, .radar-card .free-meta { line-height: 1.5; }
+.radar-card .free-btn { margin-top: auto; }
+.radar-card .tag-row { flex-wrap: wrap; }
+.radar-description summary { cursor: pointer; line-height: 1.5; }
+.radar-description summary span { color: var(--accent); text-decoration: underline; }
+.radar-description[open] p { margin-top: 8px; }
+@media (max-width: 720px) {
+  #tab-crowd .free-grid, #tab-events .free-grid, #tab-releases .free-grid { grid-template-columns: minmax(0, 1fr); }
+  .radar-card .tag-row { display: flex; }
+}
