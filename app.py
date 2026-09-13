@@ -29,6 +29,7 @@ import xml.etree.ElementTree as ET
 import requests
 from flask import Flask, jsonify, request, send_from_directory
 from gamepass_view import enrich_gamepass
+from price_history_view import attach_low
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,15 @@ def static_files(filename):
 
 # ─── /api/games ───────────────────────────────────────────────────────────────
 
+def load_price_history():
+    path = os.environ.get('STEAM_HISTORY_FILE', os.path.join(os.path.dirname(DATA_FILE), 'steam_price_history.json'))
+    try:
+        with open(path, encoding='utf-8-sig') as handle:
+            value = json.load(handle)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
 @app.route("/api/games")
 def api_games():
     """Devolve o JSON gerado pelo cron. 503 se ainda não houver dados."""
@@ -94,10 +104,15 @@ def api_games():
             "error": "dados ainda nao gerados — rode o cron (steam_sale_ranker.py --json)",
             "blocks": [],
         }), 503
-    # send_from_directory aplica caching/etag/last-modified de graça.
-    directory = os.path.dirname(DATA_FILE) or "."
-    filename  = os.path.basename(DATA_FILE)
-    return send_from_directory(directory, filename, mimetype="application/json")
+    with open(DATA_FILE, encoding='utf-8-sig') as handle:
+        payload = json.load(handle)
+    history = load_price_history()
+    for block in payload.get('blocks', []):
+        for game in block.get('games', []):
+            attach_low(game, game.get('appid'), history)
+    response = jsonify(payload)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 # ─── /api/free-games ──────────────────────────────────────────────────────────
 
@@ -148,7 +163,13 @@ def api_gamepass():
             comparison = json.load(handle)
     except (OSError, ValueError):
         comparison = {}
-    response = jsonify(enrich_gamepass(payload, comparison))
+    payload = enrich_gamepass(payload, comparison)
+    history = load_price_history()
+    for section in ('catalog', 'added', 'removed'):
+        for game in payload.get(section, []):
+            price = (comparison.get('prices') or {}).get(game.get('id')) or {}
+            attach_low(game, price.get('appid'), history)
+    response = jsonify(payload)
     response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -169,6 +190,9 @@ def api_releases():
         data["stale"] = bool(data.get("stale")) or until.tzinfo is None or until < datetime.now(timezone.utc)
     except (KeyError, TypeError, ValueError):
         data["stale"] = True
+    history = load_price_history()
+    for game in data['releases']:
+        attach_low(game, game.get('appid'), history)
     response = jsonify(data)
     response.headers["Cache-Control"] = "no-store"
     return response

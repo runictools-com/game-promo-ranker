@@ -2,7 +2,7 @@
 set -euo pipefail
 expected="$1"
 mode="${2:-full}"
-[[ "$mode" == "full" || "$mode" == "rerank" || "$mode" == "gamepass-prices" ]]
+[[ "$mode" == "full" || "$mode" == "rerank" || "$mode" == "gamepass-prices" || "$mode" == "history" ]]
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 cd /home/deploy/steam-sale-ranker
 exec 9>/tmp/gamepromo-release.lock
@@ -21,7 +21,9 @@ test "$(git rev-parse HEAD)" = "$expected"
 docker compose -f docker-compose.prod.yml up -d --no-build gamepromo
 python3 deploy/install_cron.py
 refresh_status=0
-if [[ "$mode" == "gamepass-prices" ]]; then
+if [[ "$mode" == "history" ]]; then
+  flock -n /tmp/gamepromo-refresh.lock timeout 1800 docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest steam_history_daily.py --data-dir data || refresh_status=$?
+elif [[ "$mode" == "gamepass-prices" ]]; then
   flock -n /tmp/gamepromo-refresh.lock timeout 1800 docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest gamepass_prices.py --data-dir data --max-lookups 0 || refresh_status=$?
   flock -n /tmp/gamepromo-refresh.lock timeout 1800 docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest gamepass_prices.py --data-dir data --max-lookups 600 || refresh_status=$?
 elif [[ "$mode" == "rerank" ]]; then

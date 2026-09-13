@@ -232,6 +232,14 @@ def main():
     path=Path(args.json) if args.json else Path(args.data_dir)/"gamepass_prices.json"
     folder=path.parent;folder.mkdir(parents=True,exist_ok=True)
     output=collect(read(folder/"gamepass.json"),read(path),read(folder/"games.json"),max_lookups=args.max_lookups)
+    from price_history_store import read_history, write_history, observe
+    history_path = folder/'steam_price_history.json'
+    history = read_history(history_path)
+    current = datetime.now(timezone.utc)
+    for price in output['prices'].values():
+        if price.get('currency') == 'BRL' and type(price.get('price_cents')) is int and price['price_cents'] >= 0 and fresh(price.get('checked_at'), current, 36):
+            observe(history, str(price['appid']), price['price_cents'], price['checked_at'])
+    write_history(history_path, history)
     tmp=path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(output,ensure_ascii=False,indent=2),encoding="utf-8")
     os.replace(tmp,path)

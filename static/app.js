@@ -70,6 +70,15 @@ function allGames() {
 }
 
 // Selo de qualidade do preço (a partir de low_price_brl vs sale_price — já no JSON).
+function priceLowHtml(g) {
+  const low = g.price_low;
+  if (!low || !Number.isInteger(low.price_cents)) return '<span class="price-low muted">Mínima Steam: aguardando preço verificado</span>';
+  const price = (low.price_cents/100).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
+  const date = value => value ? new Date(value).toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) : '';
+  const since = date(low.first_seen);
+  const status = low.new_low ? ' · nova mínima registrada' : low.observation_days <= 1 ? ' · primeiro registro' : '';
+  return `<span class="price-low" title="Menor preço Steam BRL observado pelo aplicativo; não inclui períodos anteriores à coleta.">Menor observado Steam: <b>${price}</b>${status}${since ? `<small>Desde ${escapeHtml(since)}${low.last_checked ? ` · conferido ${escapeHtml(date(low.last_checked))}` : ''}</small>` : ''}</span>`;
+}
 function steamSnapshotStale() {
   if (!PAYLOAD) return false;
   const raw = PAYLOAD.generated_at || "";
@@ -78,21 +87,21 @@ function steamSnapshotStale() {
 }
 function qualityTier(g) {
   if (steamSnapshotStale()) return null;
-  const low = priceNum(g.low_price_brl), sale = priceNum(g.sale_price);
+  const low = g.price_low ? g.price_low.price_cents/100 : priceNum(g.low_price_brl), sale = priceNum(g.sale_price);
   const dates = new Set((g.price_history || []).map(p => p.d));
-  const known = g.score_components?.observed_price_proximity != null || dates.size >= 2;
+  const known = g.price_low ? g.price_low.observation_days >= 2 : g.score_components?.observed_price_proximity != null || dates.size >= 2;
   if (g.low_src !== "obs" || !known || !isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
   const ratio = sale / low;
   return { tier: sale <= low + 0.005 ? "best" : ratio <= 1.10 ? "great" : ratio <= 1.25 ? "good" : "ok",
     label: sale <= low + 0.005 ? "MENOR OBSERVADO" : "VS. MENOR OBSERVADO",
-    atLow: sale <= low + 0.005, pctAbove: Math.max(0, Math.round((ratio-1)*100)), lowStr: g.low_price_brl,
+    atLow: sale <= low + 0.005, pctAbove: Math.max(0, Math.round((ratio-1)*100)), lowStr: low.toLocaleString('pt-BR', {style:'currency',currency:'BRL'}),
     since: g.low_observed_since ? String(g.low_observed_since).slice(0,10) : "período acompanhado" };
 }
 function isObservedLow(g) { const q = qualityTier(g); return !!q && q.atLow; }
 function dealPct(g) { return qualityTier(g)?.pctAbove ?? Infinity; }
 function qsealHtml(g) {
   const q = qualityTier(g);
-  if (!q) return `<span class="muted">${steamSnapshotStale() ? "Oferta pode ter vencido: confira na Steam" : "Histórico BR insuficiente"}</span>`;
+  if (!q) return `<span class="muted">${steamSnapshotStale() ? "Oferta pode ter vencido: confira na Steam" : g.price_low ? "Preço registrado; acumulando histórico" : "Histórico BR insuficiente"}</span>`;
   const tip = `Menor BRL observado desde ${q.since}; somente datas coletadas, não mínimo de todos os tempos.`;
   return `<span class="qseal ${q.tier}" title="${escapeHtml(tip)}">${q.label}<span class="pct">+${q.pctAbove}%</span><span class="qseal-low">↓ ${escapeHtml(q.lowStr)}</span></span>`;
 }
@@ -180,8 +189,7 @@ function itemCard(g, rank, isTail) {
   const cover = headerImg(g);
   const coverImg = cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy">` : "";
   const spark = sparkline(g.price_history);
-  const lowLine = qualityTier(g) && g.low_price_brl
-    ? `<span class="spark-lo">observado: <b>${escapeHtml(g.low_price_brl)}</b></span>` : "";
+  const lowLine = priceLowHtml(g);
 
   return `
     <div class="${cls.join(" ")}" data-appid="${escapeHtml(appid)}">
@@ -230,7 +238,7 @@ function itemRow(g, rank, isTail) {
   const img = g.img_url ? `<img src="${escapeHtml(g.img_url)}" alt="" loading="lazy">` : "";
   const deck = deckPill(g, false);
   const qseal = qsealHtml(g);
-  const lowCell = qseal || (g.low_price_brl ? `<span class="muted">${escapeHtml(g.low_price_brl)}</span>` : "—");
+  const lowCell = priceLowHtml(g);
 
   return `
     <tr${trCls.length ? ` class="${trCls.join(" ")}"` : ""} data-appid="${escapeHtml(appid)}">
@@ -643,7 +651,7 @@ function gpCard(g) {
     `<a class="gp-steam-price" href="https://store.steampowered.com/app/${escapeHtml(String(g.steam.appid))}/?cc=br" target="_blank" rel="noopener">Steam: ${money(g.steam.price_cents)}</a>` : '<span class="gp-price-unknown">Preço Steam não confirmado</span>';
   const advantage = g.above_subscription ? `<span class="gp-value-label">Mais que 1 mês de PC Game Pass<br>${money(g.difference_cents)} acima da mensalidade</span>` : '';
   return `<article class="gp-card${g.above_subscription ? ' gp-above-subscription' : ''}"><a class="gp-product-link" href="${escapeHtml(g.url)}" target="_blank" rel="noopener" title="${escapeHtml(g.title)}">
-      <div class="gp-cover">${cover}</div><div class="gp-title">${escapeHtml(g.title)}</div></a><div class="gp-dev">${escapeHtml(g.dev || "")}</div><div class="gp-price">${price}${advantage}</div></article>`;
+      <div class="gp-cover">${cover}</div><div class="gp-title">${escapeHtml(g.title)}</div></a><div class="gp-dev">${escapeHtml(g.dev || "")}</div><div class="gp-price">${price}${advantage}${priceLowHtml(g)}</div></article>`;
 }
 function gpSection(title, items, cls) {
   if (!items || !items.length) return "";

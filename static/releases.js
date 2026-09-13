@@ -32,6 +32,7 @@ function releaseCard(game) {
     ${tags ? `<div class="tag-row">${tags}</div>` : ""}
     ${game.status === "scheduled" ? '<p class="free-sub">Lançamento planejado · data sujeita a alteração</p>' : game.status === "released" ? '<p class="free-sub">Lançado</p>' : ""}
     ${game.stale ? '<p class="free-sub">Informação antiga: confirme a data na Steam.</p>' : ""}
+    ${priceLowHtml(game)}
     ${url ? `<a class="free-btn" href="${url}" target="_blank" rel="noopener noreferrer">Ver na Steam</a>` : '<p class="free-sub">Link indisponível</p>'}
     </div></article>`;
 }

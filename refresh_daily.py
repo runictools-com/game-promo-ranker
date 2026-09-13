@@ -21,7 +21,8 @@ def main():
             ('free_games.py', 'free_games.json', []),
             ('epic_deals.py', 'epic_games.json', []),
             ('gamepass.py', 'gamepass.json', []),
-            ('gamepass_prices.py', 'gamepass_prices.json', ['--max-lookups', '600'])]
+            ('gamepass_prices.py', 'gamepass_prices.json', ['--max-lookups', '600']),
+            ('steam_history_daily.py', 'steam_price_history.json', [])]
     results = []
     for script, output, options in jobs:
         print(f'\n[start] {script}', flush=True)

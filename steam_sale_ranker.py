@@ -504,6 +504,10 @@ def update_score_details(game: dict, proximity: float | None = None) -> None:
 def apply_low_cache(games: list[dict], cache_path: str) -> None:
     """Menor preço OBSERVADO BRL. USD ou antigos valores sintéticos são inválidos."""
     cache = _load_low_cache(cache_path)
+    from price_history_store import read_history, write_history, migrate_legacy, observe
+    history_path = os.path.join(os.path.dirname(cache_path), 'steam_price_history.json')
+    history = read_history(history_path)
+    migrate_legacy(history, cache)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for g in games:
         appid = g["appid"]
@@ -511,6 +515,11 @@ def apply_low_cache(games: list[dict], cache_path: str) -> None:
         ent = cache.get(appid) or {}
         if ent.get("src") != "obs" or ent.get("currency") != "BRL":
             ent = {}
+        registered = history['games'].get(str(appid))
+        if registered and (not ent or registered['low_cents'] < round(float(ent['low_brl'])*100)):
+            ent = dict(low_brl=registered['low_cents']/100, src='obs', currency='BRL', country='BR',
+                       first_seen=registered['first_seen'], beaten=bool(registered.get('new_low_at')),
+                       observed_dates=registered['observation_dates'])
         g.update(historical_low=False, observed_low=False, stores=[], low_src="obs",
                  low_price_brl="", low_observed_since="")
         if cur <= 0:
@@ -524,10 +533,12 @@ def apply_low_cache(games: list[dict], cache_path: str) -> None:
         dates = sorted(set(ent.get("observed_dates", []) + [now[:10]]))
         ent.update(low_str=_fmt_brl(ent["low_brl"]), updated=now, observed_dates=dates[-90:])
         cache[appid] = ent
+        observe(history, str(appid), round(cur*100), now)
         update_score_details(g, min(1.0, ent["low_brl"] / cur) if len(dates) >= 2 else None)
         g.update(low_price_brl=ent["low_str"], low_observed_since=ent["first_seen"],
                  observed_low=bool(ent.get("beaten") and cur <= ent["low_brl"] + 0.005))
     _save_low_cache(cache_path, cache)
+    write_history(history_path, history)
 
 
 def seed_low_cache(games: list[dict], cache_path: str) -> None:

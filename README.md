@@ -24,6 +24,10 @@ Cards e tabela preservam o ranking global. Há busca por nome, gênero, recurso/
 
 ### Histórico de preço
 
+`steam_price_history.json` é o registro persistente unificado das mínimas Steam BRL, em centavos. Ele aparece nas promoções, nos jogos do Game Pass com Steam identificado e nos lançamentos que já têm preço. A primeira observação já mostra um valor, identificado como primeiro registro; somente um preço estritamente menor substitui a mínima. Aumento, igualdade, expiração do snapshot ou saída da lista não apagam a mínima.
+
+`steam_history_daily.py` verifica diariamente todos os appids conhecidos, incluindo jogos fora das promoções e lançamentos ainda sem preço, por consultas em lotes à Steam Brasil. Ausência de preço ou falha da fonte nunca vira zero. Preço zero explícito é válido. O registro mantém início do acompanhamento, data da mínima quando conhecida e última consulta bem-sucedida. Falhas preservam o arquivo; corrupção é recusada para evitar perder registros. O cron executa a verificação mesmo se outro coletor falhar. Use `deploy/ship.ps1 -HistoryOnly` para publicar e executar apenas essa coleta.
+
 O histórico novo é exclusivamente **observado na Steam Brasil em BRL**, em `observed_lows_br_app_v2.json` e `price_series_br_app_v2.json` (até 365 pontos). A primeira observação não recebe selo de recorde. Uma comparação só aparece com pelo menos duas datas conhecidas; não representa a mínima de todos os tempos. A série acompanha os preços coletados, sem garantir observação diária de cada jogo.
 
 Valores antigos derivados de USD/CheapShark não são reutilizados como preços regionais. Não há conversão sintética nem comparação multi-loja baseada nesses valores. A aba Epic só compara valores BRL compatíveis com dados Steam recentes e títulos correspondentes.
