@@ -32,6 +32,8 @@ O histórico novo é exclusivamente **observado na Steam Brasil em BRL**, em `ob
 
 Valores antigos derivados de USD/CheapShark não são reutilizados como preços regionais. Não há conversão sintética nem comparação multi-loja baseada nesses valores. A aba Epic só compara valores BRL compatíveis com dados Steam recentes e títulos correspondentes.
 
+Nas promoções Steam, cards e linhas ficam roxos quando o preço atual coincide com uma baixa histórica verificada e amarelos quando estão até 10% acima dela. O destaque não é aplicado ao primeiro valor apenas observado localmente, evitando apresentar uma observação recente como mínima de todos os tempos.
+
 Falha ou coleta Steam vazia preserva o snapshot anterior e retorna erro ao orquestrador. Após 36 horas, a interface avisa que as ofertas podem ter vencido e retira os selos de preço. `NEW` significa novo na amostra em relação à geração anterior, não prova de início da promoção.
 
 ## Radar e agenda

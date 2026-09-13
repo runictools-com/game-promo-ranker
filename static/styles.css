@@ -246,8 +246,14 @@ a { color: inherit; }
 .legend-item b { color: var(--text-strong); }
 .legend .sw { width: 12px; height: 12px; border-radius: 4px; }
 .legend .sw.new { background: var(--green); } .legend .sw.hist { background: var(--gold); }
+.legend .sw.historical-low { background: var(--violet); }
+.legend .sw.historical-near { background: var(--gold); }
 .legend .sw.wish { background: var(--accent); } .legend .sw.fav { background: var(--violet); }
 .legend .sw.cheaper { background: var(--green); }
+.legend-note {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; color: var(--text);
+}
 
 /* ─── Blocos ───────────────────────────────────────────────────────────── */
 .block { margin-bottom: 30px; }
@@ -269,6 +275,18 @@ a { color: inherit; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--accent); }
+.card.historical-low {
+  border-color: color-mix(in srgb, var(--violet) 78%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--violet) 16%, var(--surface)), var(--surface) 58%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 28%, transparent), 0 8px 24px color-mix(in srgb, var(--violet) 13%, transparent);
+}
+.card.historical-low:hover { border-color: var(--violet); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 38%, transparent), var(--shadow-lg); }
+.card.historical-near {
+  border-color: color-mix(in srgb, var(--gold) 72%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--gold) 13%, var(--surface)), var(--surface) 58%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
+}
+.card.historical-near:hover { border-color: var(--gold); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 34%, transparent), var(--shadow-lg); }
 .card-cover { position: relative; aspect-ratio: 460 / 215; background: var(--surface-2); overflow: hidden; }
 .card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
 .card:hover .card-cover img { transform: scale(1.05); }
@@ -285,6 +303,8 @@ a { color: inherit; }
 }
 .chip.new  { background: var(--green); color: var(--green-ink); }
 .chip.hist { background: var(--gold); color: var(--gold-ink); }
+.chip.historical-low { background: var(--violet); color: #160b2b; }
+.chip.historical-near { background: var(--gold); color: var(--gold-ink); }
 .chip.wish { background: var(--accent); color: var(--accent-ink); }
 .fav-btn {
   position: absolute; bottom: 8px; right: 8px; width: 34px; height: 34px; border-radius: 50%;
@@ -314,6 +334,7 @@ a { color: inherit; }
 .qseal { display: inline-flex; flex-wrap: wrap; max-width: 100%; box-sizing: border-box; align-items: center; gap: 6px; font-size: .74rem; font-weight: 700; border-radius: 7px; padding: 3px 9px; }
 .qseal.best { background: color-mix(in srgb, var(--violet) 20%, transparent); color: var(--violet); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 45%, transparent); }
 .qseal.great{ background: color-mix(in srgb, var(--green) 18%, transparent);  color: var(--green);  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent); }
+.historical-near .qseal.great { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent); }
 .qseal.good { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent); }
 .qseal.ok   { background: var(--surface-2); color: var(--text-dim); box-shadow: inset 0 0 0 1px var(--border); }
 .qseal .pct { font-weight: 600; opacity: .85; }
@@ -385,6 +406,8 @@ td.score-cell .score-num { font-size: .86rem; min-width: 30px; }
 .badge-inline { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px; font-size: .62rem; font-weight: 800; letter-spacing: .03em; vertical-align: middle; }
 .badge-inline.new  { background: var(--green); color: var(--green-ink); }
 .badge-inline.hist { background: var(--gold); color: var(--gold-ink); }
+.badge-inline.historical-low { background: var(--violet); color: #160b2b; }
+.badge-inline.historical-near { background: var(--gold); color: var(--gold-ink); }
 .badge-inline.wish { background: var(--accent); color: var(--accent-ink); }
 
 tr.wishlisted td.name a .t-nm { color: var(--accent); }
@@ -392,6 +415,16 @@ tr.wishlisted { box-shadow: inset 3px 0 0 var(--accent); }
 tr.hist-low { box-shadow: inset 3px 0 0 var(--gold); }
 tr.new-row  { box-shadow: inset 3px 0 0 var(--green); }
 tr.faved    { box-shadow: inset 3px 0 0 var(--violet); }
+tr.historical-low {
+  background: color-mix(in srgb, var(--violet) 14%, transparent);
+  box-shadow: inset 4px 0 0 var(--violet);
+}
+tr.historical-low:hover { background: color-mix(in srgb, var(--violet) 21%, var(--surface)); }
+tr.historical-near {
+  background: color-mix(in srgb, var(--gold) 11%, transparent);
+  box-shadow: inset 4px 0 0 var(--gold);
+}
+tr.historical-near:hover { background: color-mix(in srgb, var(--gold) 18%, var(--surface)); }
 
 /* "Ver mais" */
 .tail-toggle {

@@ -94,7 +94,8 @@ function qualityTier(g) {
   const low = g.price_low ? g.price_low.price_cents/100 : priceNum(g.low_price_brl), sale = priceNum(g.sale_price);
   const dates = new Set((g.price_history || []).map(p => p.d));
   const known = g.price_low ? (g.price_low.historical || g.price_low.observation_days >= 2) : g.score_components?.observed_price_proximity != null || dates.size >= 2;
-  if (g.low_src !== "obs" || !known || !isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
+  const reliableLow = g.price_low?.historical || g.low_src === "obs";
+  if (!reliableLow || !known || !isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
   const ratio = sale / low;
   return { tier: sale <= low + 0.005 ? "best" : ratio <= 1.10 ? "great" : ratio <= 1.25 ? "good" : "ok",
     label: g.price_low?.historical ? (sale <= low + 0.005 ? "BAIXA HISTÓRICA" : "VS. BAIXA HISTÓRICA") : (sale <= low + 0.005 ? "MENOR OBSERVADO" : "VS. MENOR OBSERVADO"),
@@ -102,6 +103,12 @@ function qualityTier(g) {
     since: g.low_observed_since ? String(g.low_observed_since).slice(0,10) : "período acompanhado" };
 }
 function isObservedLow(g) { const q = qualityTier(g); return !!q && q.atLow; }
+function historicalPriceState(g) {
+  const q = qualityTier(g);
+  if (!q || !g.price_low?.historical) return null;
+  if (q.atLow) return "historical-low";
+  return q.tier === "great" ? "historical-near" : null;
+}
 function dealPct(g) { return qualityTier(g)?.pctAbove ?? Infinity; }
 function qsealHtml(g) {
   const q = qualityTier(g);
@@ -180,12 +187,16 @@ function itemCard(g, rank, isTail) {
   if (COMPARE_ACTIVE && OWNED.has(Number(appid))) return "";
   const wished = COMPARE_ACTIVE && WISHLIST.has(Number(appid));
   const isFav = FAVS.has(appid);
+  const historicalState = historicalPriceState(g);
   const cls = ["card"];
   if (isTail) cls.push("tail-row");
+  if (historicalState) cls.push(historicalState);
 
   const ribbon =
     (g.is_new ? '<span class="chip new">NEW</span>' : "") +
-    (isObservedLow(g) ? '<span class="chip hist">★ menor observado</span>' : "") +
+    (historicalState === "historical-low" ? '<span class="chip historical-low">★ baixa histórica</span>' :
+      historicalState === "historical-near" ? '<span class="chip historical-near">perto da baixa</span>' :
+      isObservedLow(g) ? '<span class="chip hist">★ menor observado</span>' : "") +
     (wished ? '<span class="chip wish">wishlist</span>' : "");
 
   const tags = (g.tags || g.genres || []).slice(0, 3)
@@ -227,17 +238,21 @@ function itemRow(g, rank, isTail) {
   if (COMPARE_ACTIVE && OWNED.has(Number(appid))) return "";
   const wished = COMPARE_ACTIVE && WISHLIST.has(Number(appid));
   const isFav = FAVS.has(appid);
+  const historicalState = historicalPriceState(g);
 
   const trCls = [];
   if (isTail) trCls.push("tail-row");
   if (g.is_new) trCls.push("new-row");
-  if (isObservedLow(g)) trCls.push("hist-low");
+  if (historicalState) trCls.push(historicalState);
+  else if (isObservedLow(g)) trCls.push("hist-low");
   if (isFav) trCls.push("faved");
   if (wished) trCls.push("wishlisted");
 
   const badges =
     (g.is_new ? '<span class="badge-inline new">NEW</span>' : "") +
-    (isObservedLow(g) ? '<span class="badge-inline hist">OBSERVADO</span>' : "") +
+    (historicalState === "historical-low" ? '<span class="badge-inline historical-low">BAIXA HISTÓRICA</span>' :
+      historicalState === "historical-near" ? '<span class="badge-inline historical-near">PERTO DA BAIXA</span>' :
+      isObservedLow(g) ? '<span class="badge-inline hist">OBSERVADO</span>' : "") +
     (wished ? '<span class="badge-inline wish">WISH</span>' : "");
   const img = g.img_url ? `<img src="${escapeHtml(g.img_url)}" alt="" loading="lazy">` : "";
   const deck = deckPill(g, false);
@@ -348,7 +363,7 @@ function passesFilter(g, f) {
   if (f.minPct && Number(g.pct_positive) < f.minPct) return false;
   if (f.tagFav && !FAVS.has(String(g.appid))) return false;
   if (f.tagNew && !g.is_new) return false;
-  if (f.tagHist && !isObservedLow(g)) return false;
+  if (f.tagHist && historicalPriceState(g) !== "historical-low") return false;
   if (f.tagWish && !(COMPARE_ACTIVE && WISHLIST.has(Number(g.appid)))) return false;
   return true;
 }
@@ -420,16 +435,16 @@ function renderStats() {
   if (!PAYLOAD) return;
   const games = allGames().map((x) => x.g);
   const total = PAYLOAD.total_collected ?? games.length;
-  const histLow = games.filter((g) => isObservedLow(g)).length;
+  const histLow = games.filter((g) => historicalPriceState(g) === "historical-low").length;
   const favOnSale = games.filter((g) => FAVS.has(String(g.appid)));
-  const favLow = favOnSale.filter((g) => isObservedLow(g)).length;
+  const favLow = favOnSale.filter((g) => historicalPriceState(g) === "historical-low").length;
   let best = games[0] || null;
   for (const g of games) if (!best || g.score > best.score) best = g;
 
   const tiles = [
     { cls: "", k: total, l: "jogos rankeados" },
-    { cls: "is-gold", k: histLow, l: "no <b>menor observado</b>" },
-    { cls: "is-violet clickable", k: FAVS.size, l: favLow ? `favoritos · <b>${favLow} no menor observado</b>` : "favoritos salvos", act: "fav" },
+    { cls: "is-violet", k: histLow, l: "na <b>baixa histórica</b>" },
+    { cls: "is-violet clickable", k: FAVS.size, l: favLow ? `favoritos · <b>${favLow} na baixa histórica</b>` : "favoritos salvos", act: "fav" },
     { cls: "is-green", k: best ? best.score.toFixed(1) : "—", l: best ? `melhor: <b>${escapeHtml(best.name.slice(0, 22))}</b>` : "melhor score" },
   ];
   el("stat-strip").innerHTML = tiles.map((t) =>
