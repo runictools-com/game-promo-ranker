@@ -76,8 +76,12 @@ function priceLowHtml(g) {
   const price = (low.price_cents/100).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
   const date = value => value ? new Date(value).toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) : '';
   const since = date(low.first_seen);
+  if (low.historical) {
+    const source = /^https:\/\/isthereanydeal\.com\//.test(low.source_url || '') ? `<a href="${escapeHtml(low.source_url)}" target="_blank" rel="noopener noreferrer">IsThereAnyDeal</a>` : 'IsThereAnyDeal';
+    return `<span class="price-low">Baixa histórica Steam: <b>${price}</b>${low.new_low ? ' · nova mínima' : ''}<small>${low.low_at ? `Em ${escapeHtml(date(low.low_at))} · ` : ''}${source} · salvo localmente</small></span>`;
+  }
   const status = low.new_low ? ' · nova mínima registrada' : low.observation_days <= 1 ? ' · primeiro registro' : '';
-  return `<span class="price-low" title="Menor preço Steam BRL observado pelo aplicativo; não inclui períodos anteriores à coleta.">Menor observado Steam: <b>${price}</b>${status}${since ? `<small>Desde ${escapeHtml(since)}${low.last_checked ? ` · conferido ${escapeHtml(date(low.last_checked))}` : ''}</small>` : ''}</span>`;
+  return `<span class="price-low" title="Histórico externo ainda indisponível; este valor é o menor observado pelo aplicativo.">Menor observado Steam: <b>${price}</b>${status}<small>Baixa histórica: aguardando fonte${since ? ` · desde ${escapeHtml(since)}` : ''}</small></span>`;
 }
 function steamSnapshotStale() {
   if (!PAYLOAD) return false;
@@ -89,11 +93,11 @@ function qualityTier(g) {
   if (steamSnapshotStale()) return null;
   const low = g.price_low ? g.price_low.price_cents/100 : priceNum(g.low_price_brl), sale = priceNum(g.sale_price);
   const dates = new Set((g.price_history || []).map(p => p.d));
-  const known = g.price_low ? g.price_low.observation_days >= 2 : g.score_components?.observed_price_proximity != null || dates.size >= 2;
+  const known = g.price_low ? (g.price_low.historical || g.price_low.observation_days >= 2) : g.score_components?.observed_price_proximity != null || dates.size >= 2;
   if (g.low_src !== "obs" || !known || !isFinite(low) || low <= 0 || !isFinite(sale) || sale <= 0) return null;
   const ratio = sale / low;
   return { tier: sale <= low + 0.005 ? "best" : ratio <= 1.10 ? "great" : ratio <= 1.25 ? "good" : "ok",
-    label: sale <= low + 0.005 ? "MENOR OBSERVADO" : "VS. MENOR OBSERVADO",
+    label: g.price_low?.historical ? (sale <= low + 0.005 ? "BAIXA HISTÓRICA" : "VS. BAIXA HISTÓRICA") : (sale <= low + 0.005 ? "MENOR OBSERVADO" : "VS. MENOR OBSERVADO"),
     atLow: sale <= low + 0.005, pctAbove: Math.max(0, Math.round((ratio-1)*100)), lowStr: low.toLocaleString('pt-BR', {style:'currency',currency:'BRL'}),
     since: g.low_observed_since ? String(g.low_observed_since).slice(0,10) : "período acompanhado" };
 }
@@ -102,7 +106,7 @@ function dealPct(g) { return qualityTier(g)?.pctAbove ?? Infinity; }
 function qsealHtml(g) {
   const q = qualityTier(g);
   if (!q) return `<span class="muted">${steamSnapshotStale() ? "Oferta pode ter vencido: confira na Steam" : g.price_low ? "Preço registrado; acumulando histórico" : "Histórico BR insuficiente"}</span>`;
-  const tip = `Menor BRL observado desde ${q.since}; somente datas coletadas, não mínimo de todos os tempos.`;
+  const tip = g.price_low?.historical ? "Mínima Steam Brasil: histórico IsThereAnyDeal e novas mínimas verificadas pelo aplicativo." : `Menor BRL observado desde ${q.since}; somente datas coletadas, não mínimo de todos os tempos.`;
   return `<span class="qseal ${q.tier}" title="${escapeHtml(tip)}">${q.label}<span class="pct">+${q.pctAbove}%</span><span class="qseal-low">↓ ${escapeHtml(q.lowStr)}</span></span>`;
 }
 function scoreDetails(g) {
@@ -265,7 +269,7 @@ function tableHead(sort) {
     <th class="col-reviews ${cls("reviews")}" data-sort="reviews">Reviews ${arrow("reviews")}</th>
     <th class="col-orig">Original</th>
     <th class="${cls("price")}" data-sort="price">Promo ${arrow("price")}</th>
-    <th class="${cls("deal")}" data-sort="deal">vs. observado ${arrow("deal")}</th>
+    <th class="${cls("deal")}" data-sort="deal">Baixa histórica ${arrow("deal")}</th>
     <th class="${cls("score")}" data-sort="score">Score ${arrow("score")}</th>
   </tr></thead>`;
 }

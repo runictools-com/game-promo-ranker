@@ -98,3 +98,8 @@ A entrega completa executa testes, preflight de produção, push, build da aplic
 | `GET /api/gamepass` | Catálogo Game Pass |
 | `GET /api/steam-user?profile=...&key=...` | Wishlist e biblioteca; chave opcional |
 | `GET /healthz` | Saúde da aplicação |
+
+
+### Baixa histórica Steam Brasil
+
+`steam_historical_import.py` importa diariamente a mínima histórica Steam (loja 61), país BR e moeda BRL pelo endpoint público `prices/v2` do Augmented Steam/IsThereAnyDeal. AppIDs são exatos, sem busca por nomes. Lotes de 50 têm intervalo de 3 segundos; falhas interrompem a rodada preservando os lotes salvos. O arquivo persistente `data/steam_price_history.json` mantém valor, data, fonte e tentativas dos jogos sem cobertura. Importações nunca aumentam uma mínima salva; preços novos menores registrados pela Steam passam a ser a mínima. Cards e tabela mostram o histórico disponível mesmo quando a fonte cai; sem cobertura, indicam pendência em vez de inventar preço. O histórico externo complementa o histórico observado descrito acima.

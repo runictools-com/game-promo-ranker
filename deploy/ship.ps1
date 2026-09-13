@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoDeploy, [switch]$RerankOnly, [switch]$GamepassPricesOnly, [switch]$HistoryOnly, [switch]$DiscoveryOnly)
+param([switch]$NoDeploy, [switch]$RerankOnly, [switch]$GamepassPricesOnly, [switch]$HistoryOnly, [switch]$DiscoveryOnly, [switch]$HistoricalImportOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $python = 'C:/Users/eep0x10/scoop/apps/python/current/python.exe'
@@ -24,7 +24,7 @@ try {
     $remoteFile = "/tmp/gamepromo-release-$revision.sh"
     scp -i C:/Users/eep0x10/.ssh/do_deploy deploy/remote-release.sh "deploy@187.127.28.169:$remoteFile"
     if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-    $refreshMode = if ($DiscoveryOnly) { 'discovery' } elseif ($HistoryOnly) { 'history' } elseif ($GamepassPricesOnly) { 'gamepass-prices' } elseif ($RerankOnly) { 'rerank' } else { 'full' }
+    $refreshMode = if ($HistoricalImportOnly) { 'historical-import' } elseif ($DiscoveryOnly) { 'discovery' } elseif ($HistoryOnly) { 'history' } elseif ($GamepassPricesOnly) { 'gamepass-prices' } elseif ($RerankOnly) { 'rerank' } else { 'full' }
     ssh -i C:/Users/eep0x10/.ssh/do_deploy deploy@187.127.28.169 bash $remoteFile $revision $refreshMode
     if ($LASTEXITCODE -ne 0) { throw 'Remote release or one collector failed; inspect log and status before retrying' }
 } finally { Pop-Location }

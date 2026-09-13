@@ -56,6 +56,16 @@ def validate(history):
     validate_envelope(history)
     for appid, entry in history["games"].items():
         validate_entry(appid, entry)
+    historical = history.get("historical", {})
+    if not isinstance(historical, dict):
+        raise HistoryError("Invalid historical records")
+    for appid, entry in historical.items():
+        if (not str(appid).isdigit() or not isinstance(entry, dict)
+                or not cents_valid(entry.get("low_cents")) or entry.get("currency") != "BRL"
+                or entry.get("country") != "BR" or entry.get("shop_id") != 61):
+            raise HistoryError("Invalid historical price")
+        timestamp(entry.get("low_at"))
+        timestamp(entry.get("checked_at"))
     return history
 
 
