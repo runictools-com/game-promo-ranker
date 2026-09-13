@@ -218,6 +218,9 @@ a { color: inherit; }
 }
 .filters select:focus { outline: none; border-color: var(--accent); }
 /* New filters use the same existing control styling. */
+.filters { min-width: 0; }
+.filters > * { max-width: 100%; }
+.filters select { min-width: 0; }
 .filters input[type="number"], .filters input[type="date"], .filters input[type="month"] {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; color: var(--text);
   font-size: .85rem; padding: 9px 11px; max-width: 100%; color-scheme: dark;
@@ -507,6 +510,31 @@ footer b { color: var(--text); }
 .radar-description summary { cursor: pointer; line-height: 1.5; }
 .radar-description summary span { color: var(--accent); text-decoration: underline; }
 .radar-description[open] p { margin-top: 8px; }
+/* Keep radar controls separated and within the available viewport. */
+:is(#tab-releases, #tab-events, #tab-crowd) { min-width: 0; max-width: 100%; }
+:is(#tab-releases, #tab-events, #tab-crowd) > .sub {
+  color: var(--text-dim); font-size: .86rem; line-height: 1.5;
+  margin-bottom: 8px; overflow-wrap: anywhere;
+}
+:is(#release-refresh, #events-retry, #radar-retry) { margin-bottom: 16px; max-width: 100%; }
+:is(#tab-releases, #tab-events, #tab-crowd) > .filters { margin-bottom: 14px; align-items: end; }
+:is(#release-count, #event-count, #crowd-count) { margin: 0 0 16px; line-height: 1.5; overflow-wrap: anywhere; }
+:is(#tab-releases, #tab-events, #tab-crowd) .filters > label {
+  display: flex; gap: 6px; align-items: center; min-width: 0;
+}
+#tab-releases .filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(150px, 1fr)) minmax(140px, 1fr) auto;
+  gap: 12px;
+}
+#tab-releases .filters > label { flex-direction: column; align-items: stretch; font-size: .82rem; color: var(--text-dim); }
+#tab-releases .filters :is(input, select, button) { width: 100%; min-width: 0; min-height: 40px; font-family: inherit; }
+#tab-releases .free-intro { overflow-wrap: anywhere; }
+#tab-releases .free-h2 { line-height: 1.4; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  #tab-releases .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #release-search { grid-column: 1 / -1; }
+}
 @media (max-width: 720px) {
   #tab-crowd .free-grid, #tab-events .free-grid, #tab-releases .free-grid { grid-template-columns: minmax(0, 1fr); }
   .radar-card .tag-row { display: flex; }
