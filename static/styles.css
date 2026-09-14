@@ -226,7 +226,25 @@ a { color: inherit; }
   font-size: .85rem; padding: 9px 11px; max-width: 100%; color-scheme: dark;
 }
 .filters details { max-width: 100%; }
-.filters details select { max-width: 100%; }
+.filters details[open] {
+  display: block;
+  flex: 1 0 100%; min-width: 0; padding: 11px 12px 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+}
+.filters details[open] > summary { cursor: pointer; }
+.filters details[open] > p {
+  margin: 8px 0 10px; color: var(--text-dim); font-size: .8rem; line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tag-filter-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+  min-width: 0;
+}
+.tag-filter-grid > label {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px;
+  min-width: 0; color: var(--text-dim); font-size: .8rem;
+}
+.tag-filter-grid select { width: 100%; min-width: 0; max-width: 100%; }
 .free-grid.radar-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .filters button.secondary {
   background: var(--surface-3); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
@@ -518,6 +536,7 @@ footer b { color: var(--text); }
   td.name img { width: 60px; height: 22px; }
   td.reviews, td.orig, thead th.col-reviews, thead th.col-orig { display: none; }
   .free-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 11px; }
+  .tag-filter-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto; }

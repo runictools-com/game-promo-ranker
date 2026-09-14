@@ -84,8 +84,10 @@
         <select id="f-category" aria-label="Recurso"><option value="">Todos os recursos</option></select>
         <details><summary>Tags: incluir / excluir</summary>
           <p>Incluir exige todas as tags; excluir remove qualquer uma. Ctrl/Cmd permite seleção múltipla.</p>
-          <label>Incluir <select id="f-tags-include" multiple size="5" aria-label="Tags obrigatórias"></select></label>
-          <label>Excluir <select id="f-tags-exclude" multiple size="5" aria-label="Tags excluídas"></select></label>
+          <div class="tag-filter-grid">
+            <label>Incluir <select id="f-tags-include" multiple size="5" aria-label="Tags obrigatórias"></select></label>
+            <label>Excluir <select id="f-tags-exclude" multiple size="5" aria-label="Tags excluídas"></select></label>
+          </div>
         </details>
         <input id="f-budget" type="number" min="0" step="1" placeholder="Até R$" aria-label="Preço máximo em reais">
         <label><input id="f-gems" type="checkbox"> Pérolas pouco conhecidas</label>
