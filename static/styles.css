@@ -226,6 +226,13 @@ a { color: inherit; }
   font-size: .85rem; padding: 9px 11px; max-width: 100%; color-scheme: dark;
 }
 .filters details { max-width: 100%; }
+.filters details:not([open]) {
+  display: flex; align-items: center; min-height: 36px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
+}
+.filters details:not([open]) > summary {
+  padding: 8px 11px; cursor: pointer; white-space: nowrap;
+}
 .filters details[open] {
   display: block;
   flex: 1 0 100%; min-width: 0; padding: 11px 12px 12px;
