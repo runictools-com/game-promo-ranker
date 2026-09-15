@@ -31,7 +31,12 @@ class RankingTests(unittest.TestCase):
         game = dict(pct_positive=95, total_reviews=30000, discount=80)
         r.update_score_details(game)
         self.assertEqual(game['score'], r.calc_score(95, 30000, 80))
-        self.assertEqual(game['score_version'], 3)
+        self.assertEqual(game['score_version'], 4)
+
+    def test_major_well_reviewed_game_beats_tiny_perfect_sample(self):
+        sea_of_thieves = r.calc_score(88, 147413, 65)
+        tiny_perfect_game = r.calc_score(100, 100, 90)
+        self.assertGreater(sea_of_thieves, tiny_perfect_game)
 
     def test_filter_explicit_but_keep_mature_and_niche(self):
         self.assertIsNone(r._parse_row(row(tags="[9130]")))
@@ -50,6 +55,19 @@ class RankingTests(unittest.TestCase):
             games, _ = r._fetch_strategy("", 2, "test")
         self.assertEqual(len(games), 1)
         self.assertEqual(fetch.call_count, 2)
+
+    def test_complete_collection_reaches_games_after_old_twenty_page_limit(self):
+        target = {"appid": "1172620", "name": "Sea of Thieves: 2026 Edition"}
+
+        def page(start, sort_by="Reviews_DESC"):
+            return ([target] if start == 1500 else [], 1550)
+
+        with patch.object(r, "fetch_page", side_effect=page), patch.object(r, "fetch_tag_names", return_value={}):
+            games = r.collect_all(20)
+        self.assertIn(target, games)
+        self.assertEqual(r.COLLECTION_COVERAGE["status"], "complete")
+        self.assertTrue(r.COLLECTION_COVERAGE["complete_catalog"])
+        self.assertEqual(r.COLLECTION_COVERAGE["pages_scanned"], 31)
 
     def test_historical_low_never_inferred_from_usd(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,11 +143,11 @@ class RankingTests(unittest.TestCase):
                 r._search_get({})
         self.assertEqual(get.call_count,3)
 
-    def test_search_calls_share_three_second_spacing(self):
+    def test_search_calls_share_one_second_spacing(self):
         with patch.object(r.requests,"get",return_value=Mock(status_code=200)), patch.object(r.time,"sleep") as sleep, patch.object(r.time,"monotonic",return_value=100), patch.object(r,"_search_last_call",None):
             r._search_get({"sort_by":"Reviews_DESC"})
             r._search_get({"sort_by":"Discount_DESC"})
-        sleep.assert_called_once_with(3.0)
+        sleep.assert_called_once_with(1.0)
 
     def test_retry_after_http_date_and_fallback(self):
         from datetime import datetime,timezone
@@ -148,7 +166,7 @@ class RankingTests(unittest.TestCase):
         payload = r.build_json_payload({game["block"]: [game]}, 1)
         saved = payload["blocks"][0]["games"][0]
         self.assertEqual(saved["tags"], ["Adventure"])
-        self.assertEqual(saved["score_version"], 3)
+        self.assertEqual(saved["score_version"], 4)
         self.assertEqual(saved["currency"], "BRL")
         self.assertIn("categories", saved)
 

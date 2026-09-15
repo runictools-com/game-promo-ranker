@@ -10,15 +10,15 @@ Aplicação Python/Flask para descobrir promoções Steam, campanhas de financia
 O ranking global equilibra desconto, quantidade de reviews e percentual positivo:
 
 ```text
-volume = 0.50 + 0.50 × min(1, log10(1 + reviews) / 5)
-score = 10 × Wilson95² × volume × (0.40 + 0.60 × desconto) × fator_histórico
+volume = 0.25 + 0.75 × min(1, log10(1 + reviews) / 5)
+score = 10 × Wilson95³ × volume × (0.40 + 0.60 × desconto) × fator_histórico
 ```
 
-`Wilson95` é o limite inferior de confiança da proporção de avaliações positivas. Ao quadrado, exige boa aprovação para disputar o topo. O volume de reviews tem peso explícito e logarítmico, saturado em 100 mil: jogos muito jogados recebem mais peso sem crescimento ilimitado. A versão 3 corrige o excesso de jogos com pouca evidência no topo da versão 2. Não mede qualidade absoluta nem elimina manipulação de reviews. Entram jogos com pelo menos **100 avaliações** e **15% de desconto**.
+`Wilson95` é o limite inferior de confiança da proporção de avaliações positivas. Ao cubo, exige boa aprovação para disputar o topo. O volume de reviews tem peso explícito e logarítmico, saturado em 100 mil: jogos muito jogados recebem mais peso sem crescimento ilimitado. A versão 4 impede que uma amostra mínima perfeita supere jogos muito avaliados e bem recebidos apenas por ter desconto maior. Não mede qualidade absoluta nem elimina manipulação de reviews. Entram jogos com pelo menos **100 avaliações** e **15% de desconto**.
 
 O desconto usa uma fração entre 0 e 1. Quando existem pelo menos duas datas de preço BRL observado, o fator histórico é `0.90 + 0.10 × min(1, menor_observado / preço_atual)`. Sem histórico suficiente, o fator é neutro: `1`. Qualidade Wilson, oferta e componentes ficam separados no JSON.
 
-A coleta consulta Steam Brasil em quatro ordenações: avaliações, desconto, lançamentos e relevância. É uma amostra paginada, não todo o catálogo; o JSON informa estratégias, páginas e cobertura. Produtos `/sub/` e bundles são rejeitados para não misturar preço de edição com avaliações do jogo base. Hentai e o descritor de conteúdo sexual adulto explícito são excluídos; conteúdo mature geral e nudez não são bloqueados indiscriminadamente.
+A coleta percorre até o fim a ordenação da Steam Brasil que contém jogos avaliados em promoção. O JSON registra o total informado pela fonte, as páginas lidas e se o catálogo terminou; uma interrupção preserva o snapshot anterior. Produtos `/sub/` e bundles são rejeitados para não misturar preço de edição com avaliações do jogo base. Hentai e o descritor de conteúdo sexual adulto explícito são excluídos; conteúdo mature geral e nudez não são bloqueados indiscriminadamente.
 
 Cards e tabela preservam o ranking global. Há busca por nome, gênero, recurso/categoria, tags da comunidade para incluir todas ou excluir qualquer uma, orçamento, desconto, avaliação e pérolas pouco conhecidas. Estas últimas exigem 100–4.999 avaliações e Wilson de pelo menos 0,85. Gostos, favoritos, tema e modo de exibição ficam no navegador. Gêneros, categorias e compatibilidade Steam Deck têm cache com validade de 30 dias e cobertura explícita.
 
@@ -34,7 +34,7 @@ Valores antigos derivados de USD/CheapShark não são reutilizados como preços 
 
 Nas promoções Steam, cards e linhas ficam roxos quando o preço atual coincide com uma baixa histórica verificada e amarelos quando estão até 10% acima dela. O destaque não é aplicado ao primeiro valor apenas observado localmente, evitando apresentar uma observação recente como mínima de todos os tempos.
 
-Falha ou coleta Steam vazia preserva o snapshot anterior e retorna erro ao orquestrador. Após 36 horas, a interface avisa que as ofertas podem ter vencido e retira os selos de preço. `NEW` significa novo na amostra em relação à geração anterior, não prova de início da promoção.
+Falha ou coleta Steam vazia preserva o snapshot anterior e retorna erro ao orquestrador. Após 36 horas, a interface avisa que as ofertas podem ter vencido e retira os selos de preço. `NEW` significa novo no catálogo coletado em relação à geração anterior, não prova de início da promoção.
 
 ## Radar e agenda
 
@@ -68,7 +68,7 @@ python refresh_daily.py --pages 20 --data-dir data
 python app.py
 ```
 
-`refresh_daily.py` executa independentemente os coletores Steam, radar, lançamentos, grátis, Epic e Game Pass. Registra resultados em `data/refresh_status.json`; uma falha não interrompe as demais fontes, mas faz a execução terminar com erro. Agende esse comando diariamente no ambiente de execução. Flask serve os arquivos gerados; não busca todo o catálogo a cada visita.
+O argumento `--pages` foi mantido por compatibilidade com os agendamentos existentes. O coletor principal percorre até o fim a ordenação de jogos avaliados em promoção informada pela Steam, em vez de limitar a lista às primeiras páginas. `refresh_daily.py` executa independentemente os coletores Steam, radar, lançamentos, grátis, Epic e Game Pass. Registra resultados em `data/refresh_status.json`; uma falha não interrompe as demais fontes, mas faz a execução terminar com erro. Agende esse comando diariamente no ambiente de execução. Flask serve os arquivos gerados; não busca todo o catálogo a cada visita.
 
 Para atualizar somente Steam:
 

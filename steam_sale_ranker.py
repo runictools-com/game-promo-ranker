@@ -11,9 +11,9 @@ Game Promo Ranker
 =================
 Lista jogos em promoção na Steam ordenados por score composto.
 
-Fórmula v2 (0–10): 10 × Wilson 95% × (0.60 + 0.40 × desconto) × fator histórico.
+Fórmula v4 (0–10): 10 × Wilson 95%³ × volume × (0.40 + 0.60 × desconto) × fator histórico.
 Fator histórico 0.90–1.00 após duas datas BRL; neutro (1) enquanto insuficiente.
-Sem multiplicador de fama: tamanho da amostra entra apenas na confiança.
+O volume é logarítmico e satura em 100 mil avaliações.
 Mínimo de 100 avaliações; preços regionais BRL; baixa apenas observada no Brasil.
 
 Blocos seguem a classificação oficial da Steam:
@@ -25,8 +25,8 @@ Blocos seguem a classificação oficial da Steam:
   Overwhelmingly Negative : 0-19%  (500+ reviews)
 
 Uso:
-  python steam_sale_ranker.py                          # 10 páginas (~500 jogos)
-  python steam_sale_ranker.py 20                       # 20 páginas (~1000 jogos)
+  python steam_sale_ranker.py                          # coleta o catálogo elegível completo
+  python steam_sale_ranker.py 20                       # número legado; coleta completa
   python steam_sale_ranker.py 20 --html                # gera steam_sale_ranker.html
   python steam_sale_ranker.py 20 --json data/games.json  # gera JSON p/ a app Flask
 """
@@ -126,14 +126,14 @@ def quality_lower_bound(pct: float, total: int) -> float:
 
 def review_volume_factor(total: int) -> float:
     """Volume explícito, logarítmico e limitado: 100 mil reviews já saturam."""
-    return 0.50 + 0.50 * min(1.0, math.log10(1 + max(0, total)) / 5)
+    return 0.25 + 0.75 * min(1.0, math.log10(1 + max(0, total)) / 5)
 
 
 def calc_score(pct: int, total: int, discount: int) -> float:
     """Qualidade conservadora × oportunidade; desconto não resgata qualidade ruim."""
     if total < MIN_REVIEWS:
         return 0.0
-    return (10 * quality_lower_bound(pct, total)**2 * review_volume_factor(total)
+    return (10 * quality_lower_bound(pct, total)**3 * review_volume_factor(total)
             * (0.40 + 0.60 * max(0, min(discount, 100))/100))
 
 
@@ -169,8 +169,9 @@ def review_block(pct: int, total: int) -> str:
 
 # ─── Coleta ───────────────────────────────────────────────────────────────────
 
-SEARCH_INTERVAL = 3.0
+SEARCH_INTERVAL = 1.0
 SEARCH_RETRIES = 2
+CATALOG_SAFETY_MAX_PAGES = 400
 _search_lock = _threading.Lock()
 _search_last_call = None
 
@@ -362,7 +363,7 @@ def _parse_row(row) -> dict | None:
             "genres": [], "categories": [], "currency": "BRL", "country": "BR",
             "quality_score": round(10 * quality_lower_bound(pct_positive, total_reviews), 3),
             "confidence": "high" if total_reviews >= 1000 else "moderate",
-            "score_version": 3,
+            "score_version": 4,
             "name":          name,
             "appid":         appid,
             "discount":      discount,
@@ -381,23 +382,35 @@ def _parse_row(row) -> dict | None:
 
 # ─── Coleta com paginação ─────────────────────────────────────────────────────
 
-# Duas passagens para cobrir jogos diferentes:
-# Reviews_DESC → jogos populares (muitos reviews, desconto variado)
-# sem sort     → relevância Steam para promoções (tende a priorizar descontos maiores)
-FETCH_STRATEGIES = ["Reviews_DESC", "Discount_DESC", "Released_DESC", ""]
+# Reviews_DESC contém o universo relevante para o ranker: jogos em promoção que
+# possuem avaliações. A coleta percorre essa ordenação até o total informado pela
+# Steam; jogos abaixo de MIN_REVIEWS continuam sendo descartados pelo parser.
+FETCH_STRATEGIES = ["Reviews_DESC"]
 
-def _fetch_strategy(sort_by: str, max_pages: int, label: str) -> tuple[list[dict], int]:
+def _fetch_strategy(sort_by: str, max_pages: int | None, label: str) -> tuple[list[dict], int]:
     games: list[dict] = []
     total_available = 0
-    report = {"sort": sort_by or "relevance", "pages_scanned": 0, "pages_requested": max_pages,
-              "eligible": 0, "total_available": 0, "status": "bounded"}
+    report = {"sort": sort_by or "relevance", "pages_scanned": 0,
+              "pages_requested": max_pages or 0, "eligible": 0,
+              "total_available": 0, "status": "running"}
     COLLECTION_COVERAGE["strategies"].append(report)
-    for page in range(max_pages):
+    page = 0
+    while True:
+        if page >= CATALOG_SAFETY_MAX_PAGES:
+            report["status"] = "safety_limit"
+            raise RuntimeError("Steam catalog exceeded collection safety limit; previous output must be retained")
+        if max_pages is not None and page >= max_pages:
+            report["status"] = "bounded"
+            break
         start = page * COUNT_PER_PAGE
-        print(f"\r  {label} [{page + 1}/{max_pages}] offset={start}...", end="", flush=True)
+        requested = report["pages_requested"] or "?"
+        print(f"\r  {label} [{page + 1}/{requested}] offset={start}...", end="", flush=True)
         try:
             batch, total = fetch_page(start, sort_by=sort_by)
             total_available = total
+            expected_pages = max(1, math.ceil(total / COUNT_PER_PAGE))
+            if max_pages is None:
+                report["pages_requested"] = expected_pages
             report.update(pages_scanned=page+1, total_available=total)
             report["eligible"] += len(batch)
             games.extend(batch)
@@ -410,11 +423,11 @@ def _fetch_strategy(sort_by: str, max_pages: int, label: str) -> tuple[list[dict
         except Exception as e:
             report["status"] = "failed"
             raise RuntimeError("Steam collection failed; previous output must be retained") from e
+        page += 1
     return games, total_available
 
 
 def collect_all(max_pages: int) -> list[dict]:
-    max_pages = max(1, min(20, max_pages))
     COLLECTION_COVERAGE.update(status="running", strategies=[], complete_catalog=False)
     TAG_NAMES.update(fetch_tag_names())
     seen:      set[str]   = set()
@@ -422,8 +435,8 @@ def collect_all(max_pages: int) -> list[dict]:
     total_available = 0
 
     for i, sort_by in enumerate(FETCH_STRATEGIES):
-        label = f"[pass {i+1}/{len(FETCH_STRATEGIES)} {'reviews' if sort_by else 'relevância'}]"
-        batch, total = _fetch_strategy(sort_by, max_pages, label)
+        label = f"[catálogo {i+1}/{len(FETCH_STRATEGIES)} avaliações]"
+        batch, total = _fetch_strategy(sort_by, None, label)
         total_available = max(total_available, total)
         new = 0
         for g in batch:
@@ -433,10 +446,12 @@ def collect_all(max_pages: int) -> list[dict]:
                 new += 1
         print(f"\r  pass {i+1}: +{new} novos (total único: {len(all_games)})          ")
 
-    COLLECTION_COVERAGE.update(status="bounded_sample", unique_games=len(all_games),
+    complete = all(x["status"] == "exhausted" for x in COLLECTION_COVERAGE["strategies"])
+    COLLECTION_COVERAGE.update(status="complete" if complete else "incomplete",
+                               complete_catalog=complete, unique_games=len(all_games),
                                total_available=total_available,
                                pages_scanned=sum(x["pages_scanned"] for x in COLLECTION_COVERAGE["strategies"]))
-    print(f"  Total disponível na Steam: ~{total_available} jogos em promoção")
+    print(f"  Catálogo Steam com avaliações percorrido: {total_available} ofertas")
     return all_games
 
 
@@ -490,13 +505,13 @@ def update_score_details(game: dict, proximity: float | None = None) -> None:
     history_factor = 1.0 if proximity is None else 0.90 + 0.10 * max(0, min(proximity, 1))
     deal = (0.40 + 0.60 * discount) * history_factor
     volume = review_volume_factor(game.get("total_reviews", 0))
-    game.update(quality_score=round(quality * 10, 3), deal_score=round(deal * 10, 3), score_version=3,
+    game.update(quality_score=round(quality * 10, 3), deal_score=round(deal * 10, 3), score_version=4,
                 score=calc_score(game.get("pct_positive", 0), game.get("total_reviews", 0), game.get("discount", 0)) * history_factor,
                 hidden_gem=bool(MIN_REVIEWS <= game.get("total_reviews", 0) < 5000 and quality >= 0.85),
                 score_components={"wilson_lower_bound": round(quality, 6), "discount_fraction": discount,
-                                  "review_volume_factor": volume, "quality_exponent": 2,
+                                  "review_volume_factor": volume, "quality_exponent": 3,
                                   "observed_price_proximity": proximity, "history_factor": history_factor},
-                score_rationale="Qualidade Wilson ao quadrado × desconto × volume logarítmico de reviews (limitado em 100 mil). "
+                score_rationale="Qualidade Wilson ao cubo × desconto × volume logarítmico de reviews (limitado em 100 mil). "
                     + ("Histórico BR insuficiente: efeito neutro." if proximity is None else
                        "Oportunidade ajustada pela distância ao menor BRL observado em pelo menos duas datas."))
 
@@ -716,7 +731,7 @@ def print_results(by_block: dict[str, list[dict]], total_collected: int):
 
     print(f"\n{BOLD}{CYAN}{'═' * W}")
     print(f"  GAME PROMO RANKER  —  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"  Score 0-10 = qualidade(Wilson 95%) × (0.60 + 0.40 × desconto)")
+    print("  Score 0-10 = Wilson 95%³ × volume de reviews × oferta × histórico")
     print(f"  Quanto maior, melhor a relação qualidade conservadora + desconto")
     print(f"{'═' * W}{RESET}\n")
 
@@ -971,7 +986,7 @@ def generate_html(by_block: dict[str, list[dict]], total_collected: int) -> str:
   <h1>Game Promo Ranker</h1>
   <div class="subtitle">Gerado em {now}  —  {total_collected} jogos coletados</div>
   <div class="formula">
-    score 0–10 = 10 × Wilson95² × volume de reviews × (0.40 + 0.60 × desconto) × histórico
+    score 0–10 = 10 × Wilson95³ × volume de reviews × (0.40 + 0.60 × desconto) × histórico
   </div>
   <div class="legend">
     <span><span class="sw new"></span> <b>NEW</b> — entrou em promoção hoje (vs. ontem)</span>
@@ -979,8 +994,8 @@ def generate_html(by_block: dict[str, list[dict]], total_collected: int) -> str:
   </div>
   {rows_by_block}
   <footer>
-    Fórmula: Wilson 95% × (0.60 + 0.40 × desconto); sem bônus de fama.<br>
-    O desconto pesa 50% do seu valor real para não suplantar qualidade e popularidade.
+    Fórmula: Wilson 95%³ × volume logarítmico × (0.40 + 0.60 × desconto) × histórico.<br>
+    O desconto pesa bastante, mas não suplanta qualidade e evidência de público.
   </footer>
 </body>
 </html>"""
@@ -1120,7 +1135,7 @@ def main():
         max_pages = max(1, min(20, int(numeric[0])))
 
     print(f"\n{BOLD}Game Promo Ranker{RESET}")
-    print(f"Buscando até {max_pages * COUNT_PER_PAGE} jogos em promoção...\n")
+    print("Percorrendo o catálogo Steam de jogos avaliados em promoção...\n")
 
     all_games = collect_all(max_pages)
 

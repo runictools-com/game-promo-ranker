@@ -13,7 +13,7 @@ class RerankTests(unittest.TestCase):
         self.assertEqual(result['blocks'][0]['games'][0]['appid'], '2')
         self.assertEqual(small['price_history'], [{'date':'2026-09-12','price':10}])
         self.assertEqual(small['sale_price'], 'R$10,00')
-        self.assertEqual(small['score_version'], 3)
+        self.assertEqual(small['score_version'], 4)
 
     def test_empty_snapshot_refused(self):
         with self.assertRaises(ValueError):

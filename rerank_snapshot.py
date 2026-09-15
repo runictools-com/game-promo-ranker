@@ -31,4 +31,4 @@ if __name__ == '__main__':
     temp = path.with_suffix('.rerank.tmp')
     temp.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
     os.replace(temp, path)
-    print('Ranking v3 updated; source timestamps and price observations preserved')
+    print('Ranking v4 updated; source timestamps and price observations preserved')
