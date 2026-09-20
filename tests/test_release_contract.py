@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from verify_release import verify
+from refresh_daily import JOBS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,12 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_established_frontend_features_are_present(self):
         self.assertEqual(verify(ROOT), [])
+
+    def test_core_history_refresh_precedes_auxiliary_sources(self):
+        scripts = [row[0] for row in JOBS]
+        self.assertEqual(scripts[:3], ["steam_sale_ranker.py", "steam_history_daily.py",
+                                       "steam_historical_import.py"])
+        self.assertLess(scripts.index("steam_history_daily.py"), scripts.index("gamepass_prices.py"))
 
     def test_fresh_complete_v4_catalog_and_history_pass(self):
         with tempfile.TemporaryDirectory() as temp:

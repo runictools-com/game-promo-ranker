@@ -8,6 +8,20 @@ import subprocess
 import sys
 
 
+# Keep the Steam catalog and its persisted BRL minima first: these power the
+# primary deal list and its purple/yellow historical-low states. Auxiliary
+# stores may fail or rate-limit without delaying those core facts.
+JOBS = [('steam_sale_ranker.py', 'games.json', None),
+        ('steam_history_daily.py', 'steam_price_history.json', []),
+        ('steam_historical_import.py', 'steam_price_history.json', []),
+        ('discovery.py', 'discovery.json', []),
+        ('steam_releases.py', 'releases.json', []),
+        ('free_games.py', 'free_games.json', []),
+        ('epic_deals.py', 'epic_games.json', []),
+        ('gamepass.py', 'gamepass.json', []),
+        ('gamepass_prices.py', 'gamepass_prices.json', ['--max-lookups', '600'])]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir', default='data')
@@ -15,15 +29,8 @@ def main():
     args = parser.parse_args()
     folder = Path(args.data_dir).resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    jobs = [('steam_sale_ranker.py', 'games.json', [str(args.pages)]),
-            ('discovery.py', 'discovery.json', []),
-            ('steam_releases.py', 'releases.json', []),
-            ('free_games.py', 'free_games.json', []),
-            ('epic_deals.py', 'epic_games.json', []),
-            ('gamepass.py', 'gamepass.json', []),
-            ('gamepass_prices.py', 'gamepass_prices.json', ['--max-lookups', '600']),
-            ('steam_history_daily.py', 'steam_price_history.json', []),
-            ('steam_historical_import.py', 'steam_price_history.json', [])]
+    jobs = [(script, output, [str(args.pages)] if options is None else options)
+            for script, output, options in JOBS]
     results = []
     for script, output, options in jobs:
         print(f'\n[start] {script}', flush=True)
