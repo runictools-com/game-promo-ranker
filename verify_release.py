@@ -20,7 +20,10 @@ STATIC_CONTRACT = {
     ),
     "static/index.html": (
         'Baixa histórica', 'Até 10% da baixa histórica', 'qualidade³',
+        '/static/vendor/anime.umd.min.js', '/static/motion.js',
     ),
+    "static/motion.js": ('anime.animate', 'prefers-reduced-motion', 'pagehide', 'cancel'),
+    "static/vendor/anime.umd.min.js": ('@version v4.5.0', '@license MIT'),
     "app.py": ('attach_low(game', '/healthz'),
 }
 

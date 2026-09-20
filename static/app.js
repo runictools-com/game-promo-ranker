@@ -390,6 +390,7 @@ function sortGames(arr, sort) {
 function renderGames() {
   if (!PAYLOAD) return;
   const root = el("games-root");
+  const firstPaint = root.dataset.motionReady !== "true";
   const f = filterState();
   const active = filtersActive(f);
   const fc = el("f-clear");
@@ -400,6 +401,10 @@ function renderGames() {
   root.innerHTML = flatContainer(items, active ? flatLabel(f) : "Ranking geral de oportunidades", f.sort) ||
     '<div class="empty-tier">Nenhum jogo com esses filtros.</div>';
   wireDynamic();
+  if (firstPaint) {
+    root.dataset.motionReady = "true";
+    requestAnimationFrame(() => window.GamePromoMotion?.revealResults(root));
+  }
 }
 
 // Liga os controles renderizados dinamicamente (tail toggles + sort headers).
