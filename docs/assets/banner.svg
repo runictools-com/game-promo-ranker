@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
-<title id="title">Game Promo Ranker</title><desc id="desc">Promoções com contexto. Escolhas com evidência.</desc>
-<rect width="1200" height="360" rx="20" fill="#142323"/><path d="M0 338H1200" stroke="#9c83ef" stroke-width="5"/>
-<text x="58" y="65" font-family="Arial,sans-serif" font-size="15" letter-spacing="4" fill="#9c83ef">RUNICTOOLS / DOCUMENTAÇÃO</text>
-<text x="58" y="155" font-family="Arial,sans-serif" font-weight="700" font-size="45" fill="#f6f6ed">Game Promo Ranker</text>
-<text x="60" y="210" font-family="Arial,sans-serif" font-size="23" fill="#d0dfd7">Promoções com contexto. Escolhas com evidência.</text>
-<text x="60" y="289" font-family="Arial,sans-serif" font-size="16" fill="#9c83ef">Python · Flask · Steam BRL</text>
-<g fill="none" stroke="#9c83ef" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".85"><path d="M865 265H1145M865 265V95"/><path d="M885 238L940 212L982 224L1030 166L1074 185L1130 105"/><circle cx="1130" cy="105" r="8"/></g></svg>

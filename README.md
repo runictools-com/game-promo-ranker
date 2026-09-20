@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" width="100%" alt="Game Promo Ranker — Promoções com contexto. Escolhas com evidência.">
+<img src="docs/assets/banner.png" width="100%" alt="Game Promo Ranker — Promoções com contexto. Escolhas com evidência.">
 
 # Game Promo Ranker
 
@@ -8,9 +8,26 @@
 
 Descubra jogos em promoção, acompanhe preços e consulte lançamentos, financiamento coletivo e eventos em um radar alimentado por coletores independentes.
 
+[![Python: Flask](https://img.shields.io/badge/Python-Flask-9775d7?style=flat-square)](requirements.txt)
+
 [Começar](#comece-aqui) · [Recursos](#o-que-você-encontra) · [Arquitetura](#como-o-projeto-se-organiza) · [Documentação](#documentação)
 
 </div>
+
+> O banner é uma ilustração de marca: os preços e as capas desenhados não representam ofertas reais.
+
+## Do objetivo ao resultado
+
+| Descubra | Compare | Decida |
+| --- | --- | --- |
+| Promoções, lançamentos e novas campanhas. | Preço em BRL, avaliações e histórico com origem. | Seu orçamento e seus filtros, sem confundir popularidade com qualidade. |
+
+```mermaid
+flowchart LR
+  A["Fontes públicas"] --> B["Coleta e snapshots"]
+  B --> C["Ranking e histórico"]
+  C --> D["Filtros e favoritos"]
+```
 
 ## O que você encontra
 
@@ -66,4 +83,4 @@ Fontes podem restringir consultas ou publicar dados incompletos. O ranking não 
 - [Guia de manutenção e operação](docs/PROJECT_GUIDE.md)
 - [Guia técnico detalhado](GUIDE.md)
 
-O banner é uma composição vetorial original de documentação; não é uma captura da aplicação nem uma marca oficial de terceiros.
+O banner é uma ilustração original de identidade criada com IA. Objetos, telas e valores ilustrados não são capturas da aplicação, resultados medidos nem marcas oficiais de terceiros.
