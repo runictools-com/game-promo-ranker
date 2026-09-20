@@ -18,6 +18,7 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_established_frontend_features_are_present(self):
         self.assertEqual(verify(ROOT), [])
+        self.assertIn("COPY Dockerfile.gen ./", (ROOT / "Dockerfile.gen").read_text(encoding="utf-8"))
 
     def test_core_history_refresh_precedes_auxiliary_sources(self):
         scripts = [row[0] for row in JOBS]

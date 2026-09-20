@@ -9,7 +9,7 @@ from pathlib import Path
 
 MAX_AGE_HOURS = 36
 STATIC_CONTRACT = {
-    "Dockerfile.gen": ('COPY verify_release.py ./', 'COPY app.py ./', 'COPY static/ ./static/'),
+    "Dockerfile.gen": ('COPY verify_release.py ./', 'COPY Dockerfile.gen ./', 'COPY app.py ./', 'COPY static/ ./static/'),
     "static/app.js": (
         'historical-low', 'historical-near', '/api/gamepass',
     ),
