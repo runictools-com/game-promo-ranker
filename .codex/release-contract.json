@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "project": "gamepromo",
+  "git": {
+    "requireClean": true,
+    "requireContainsUpstream": true,
+    "remote": "origin",
+    "branch": "main"
+  },
+  "requiredFiles": [
+    "verify_release.py",
+    "deploy/run_daily.sh",
+    "static/app.js",
+    "static/styles.css",
+    "static/motion.js",
+    "static/vendor/anime.umd.min.js"
+  ],
+  "requiredText": [
+    {
+      "path": "static/app.js",
+      "contains": ["historicalPriceState", "historical-low", "historical-near"]
+    },
+    {
+      "path": "static/styles.css",
+      "contains": [".card.historical-low", ".card.historical-near", "tr.historical-low", "tr.historical-near"]
+    },
+    {
+      "path": "deploy/run_daily.sh",
+      "contains": ["steam-gen:latest", "org.opencontainers.image.revision", "verify_release.py"]
+    }
+  ],
+  "checks": [
+    {
+      "name": "established release features",
+      "command": "python",
+      "args": ["verify_release.py"]
+    },
+    {
+      "name": "release contract tests",
+      "command": "python",
+      "args": ["-m", "unittest", "tests.test_release_contract", "tests.test_health"]
+    }
+  ]
+}
