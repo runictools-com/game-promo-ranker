@@ -32,6 +32,10 @@ O início rápido descreve desenvolvimento local. Antes de expor o serviço, rev
 
 Fontes podem restringir consultas ou publicar dados incompletos. O ranking não mede qualidade absoluta. Compare apenas a mesma edição, região e moeda; assinaturas são acesso temporário, não compra. O guia técnico detalha as janelas de validade e a diferença entre preços observados e históricos.
 
+## Registro da interface de promoções
+
+A recuperação de setembro de 2026 preservou a composição existente e restaurou a semântica visual: roxo identifica preço na baixa histórica e amarelo identifica preço até 10% acima dela. O primeiro preenchimento útil dos resultados usa Anime.js 4.5.0; a animação é cancelável, não se repete em atualizações de fundo e vira feedback imediato quando `prefers-reduced-motion` está ativo. A produção foi conferida em 1440 px e 390 px, sem rolagem horizontal, com filtros, cards e tabela preservados.
+
 ## Base desta documentação
 
 A apresentação foi confrontada com os seguintes arquivos e diretórios do checkout. Essa revisão foi estática; não executou o produto, coletores, instalações ou deploys.
