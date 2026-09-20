@@ -11,6 +11,8 @@ try {
         node --check $file
         if ($LASTEXITCODE -ne 0) { throw "Syntax failed: $file" }
     }
+    & $python verify_release.py
+    if ($LASTEXITCODE -ne 0) { throw 'Release feature contract failed' }
     git diff --check
     if ($LASTEXITCODE -ne 0) { throw 'Whitespace check failed' }
     if ($NoDeploy) { return }

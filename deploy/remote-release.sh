@@ -13,6 +13,7 @@ git fetch origin main
 test "$(git rev-parse origin/main)" = "$expected"
 previous=$(git rev-parse HEAD)
 git merge --ff-only "$expected"
+python3 verify_release.py
 if docker image inspect steam-sale-app:latest >/dev/null 2>&1; then
   docker tag steam-sale-app:latest "steam-sale-app:rollback-$previous"
 fi
@@ -38,8 +39,9 @@ elif [[ "$mode" == "rerank" ]]; then
   flock -n /tmp/gamepromo-refresh.lock docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest rerank_snapshot.py || refresh_status=$?
   flock -n /tmp/gamepromo-refresh.lock docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest discovery.py --json data/discovery.json || refresh_status=$?
 else
-  flock -n /tmp/gamepromo-refresh.lock timeout 9000 docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest refresh_daily.py --pages 20 || refresh_status=$?
+  timeout 9000 bash deploy/run_daily.sh || refresh_status=$?
 fi
+docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest verify_release.py --root /app --data-dir /app/data --require-fresh
 docker inspect gamepromo --format '{{.State.Health.Status}}'
 docker inspect gamepromo --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
 docker logs --tail 12 gamepromo

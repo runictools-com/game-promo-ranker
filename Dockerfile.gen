@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir "requests>=2.31" "beautifulsoup4>=4.12"
 COPY steam_sale_ranker.py free_games.py epic_deals.py gamepass.py ./
 COPY catarse.py discovery.py steam_releases.py refresh_daily.py rerank_snapshot.py gamepass_prices.py ./
 COPY price_history_store.py steam_history_daily.py steam_historical_import.py ./
+COPY verify_release.py ./
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision=$VCS_REF

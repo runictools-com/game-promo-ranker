@@ -9,6 +9,6 @@ backup = Path('/home/deploy/backups-predeploy') / ('gamepromo-cron-' + datetime.
 backup.parent.mkdir(parents=True, exist_ok=True)
 backup.write_text(old, encoding='utf-8')
 lines = [line for line in old.splitlines() if not (root in line and ('steam-gen' in line or 'gamepromo-refresh' in line))]
-lines.append('0 3 * * * cd ' + root + ' && flock -n /tmp/gamepromo-refresh.lock timeout 9000 docker run --rm --entrypoint python -v steam_data:/app/data steam-gen:latest refresh_daily.py --pages 20 >> /var/backups/mesa20/steam-gen.log 2>&1')
+lines.append('0 3 * * * cd ' + root + ' && timeout 9000 bash deploy/run_daily.sh >> /var/backups/mesa20/steam-gen.log 2>&1')
 subprocess.run(['crontab', '-'], input='\n'.join(lines) + '\n', text=True, check=True)
 print('cron installed; backup=' + str(backup))

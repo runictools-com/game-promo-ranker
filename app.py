@@ -422,7 +422,41 @@ def api_steam_user():
 
 @app.route("/healthz")
 def healthz():
-    return jsonify({"ok": True, "data_present": os.path.exists(DATA_FILE)})
+    now = datetime.now(timezone.utc)
+
+    def snapshot(path):
+        try:
+            with open(path, encoding="utf-8-sig") as stream:
+                value = json.load(stream)
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def fresh(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            age = (now - stamp.astimezone(timezone.utc)).total_seconds()
+            return stamp.tzinfo is not None and 0 <= age <= 36 * 3600
+        except (TypeError, ValueError):
+            return False
+
+    games = snapshot(DATA_FILE)
+    history_path = os.environ.get(
+        "STEAM_HISTORY_FILE", os.path.join(os.path.dirname(DATA_FILE), "steam_price_history.json")
+    )
+    history = snapshot(history_path)
+    history_run = history.get("last_run", {}) if isinstance(history.get("last_run"), dict) else {}
+    checks = {
+        "data_present": bool(games.get("blocks")),
+        "catalog_complete": games.get("coverage", {}).get("complete_catalog") is True,
+        "catalog_fresh": fresh(games.get("generated_at")),
+        "history_present": bool(history.get("games")) and bool(history.get("historical")),
+        "history_fresh": history_run.get("status") == "ok" and fresh(history_run.get("finished_at")),
+    }
+    body = {"ok": all(checks.values()), **checks,
+            "catalog_generated_at": games.get("generated_at"),
+            "history_finished_at": history_run.get("finished_at")}
+    return jsonify(body), 200 if body["ok"] else 503
 
 
 if __name__ == "__main__":
