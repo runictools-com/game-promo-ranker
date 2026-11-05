@@ -2,7 +2,11 @@ __pycache__/
 *.pyc
 *.pyo
 steam_sale_ranker.html
-data/
+data/*
+!data/README.md
 _prev_appids.json
 preview-v2/
 output/
+.venv/
+.env
+backups/

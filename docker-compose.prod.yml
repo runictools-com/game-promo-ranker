@@ -1,0 +1,28 @@
+services:
+  gamepromo:
+    build: .
+    image: steam-sale-app:latest
+    container_name: gamepromo
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 200
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "8000"
+    environment:
+      - VIRTUAL_HOST=gamepromo.eep0x10.tech,gamepromo.runictools.com
+      - VIRTUAL_PORT=8000
+    volumes:
+      - steam_data:/app/data
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
+
+volumes:
+  steam_data:
+    external: true

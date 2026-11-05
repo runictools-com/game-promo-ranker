@@ -8,7 +8,9 @@
 
 Descubra jogos em promoção, acompanhe preços e consulte lançamentos, financiamento coletivo e eventos em um radar alimentado por coletores independentes.
 
-[![Python: Flask](https://img.shields.io/badge/Python-Flask-9775d7?style=flat-square)](requirements.txt)
+[![CI](https://github.com/runictools-com/game-promo-ranker/actions/workflows/ci.yml/badge.svg)](https://github.com/runictools-com/game-promo-ranker/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](.python-version)
+[![Flask](https://img.shields.io/badge/Flask-3.1-9775d7?style=flat-square&logo=flask&logoColor=white)](requirements.txt)
 
 [Começar](#comece-aqui) · [Recursos](#o-que-você-encontra) · [Arquitetura](#como-o-projeto-se-organiza) · [Documentação](#documentação)
 
@@ -37,17 +39,27 @@ flowchart LR
 
 ## Comece aqui
 
-Os comandos partem da raiz de um clone deste repositório, salvo quando incluem o próprio clone.
+Requisitos: Git, Python 3.12 e Node.js 24. No Windows/PowerShell:
 
-```sh
-python -m venv .venv
-# Ative .venv no seu sistema antes dos comandos seguintes.
-python -m pip install -r requirements.txt
-python refresh_daily.py --pages 20 --data-dir data
-python app.py
+```powershell
+git clone https://github.com/runictools-com/game-promo-ranker.git
+cd game-promo-ranker
+./scripts/bootstrap.ps1
+./scripts/check.ps1
+./.venv/Scripts/python.exe app.py
 ```
 
-Abra http://localhost:8000. A coleta acessa serviços externos e pode demorar ou falhar parcialmente. O servidor de desenvolvimento usa debug e não deve ser exposto à internet.
+Linux/macOS:
+
+```sh
+git clone https://github.com/runictools-com/game-promo-ranker.git
+cd game-promo-ranker
+./scripts/bootstrap.sh
+./scripts/check.sh
+.venv/bin/python app.py
+```
+
+Abra http://localhost:8000. Um clone novo não inclui snapshots de produção; as APIs podem informar indisponibilidade até uma coleta local. Para gerar dados, execute `.venv/Scripts/python.exe refresh_daily.py --pages 20 --data-dir data` (Windows) ou o equivalente Unix. A coleta acessa serviços externos e pode demorar ou falhar parcialmente. O servidor de desenvolvimento usa debug e não deve ser exposto à internet.
 
 ## Como o projeto se organiza
 
@@ -57,18 +69,20 @@ Abra http://localhost:8000. A coleta acessa serviços externos e pode demorar ou
 | [refresh_daily.py](refresh_daily.py) | Orquestra coletores e registra a situação de cada fonte. |
 | [steam_sale_ranker.py](steam_sale_ranker.py) | Coleta e pontuação das promoções Steam. |
 | [price_history_store.py](price_history_store.py) | Persistência do histórico de preços. |
-| [index.html](index.html) | Interface; complementada por static/. |
+| [static/index.html](static/index.html) | Interface realmente servida, complementada pelos scripts e estilos em `static/`. |
 | [deploy/ship.ps1](deploy/ship.ps1) | Entrega orquestrada; não necessária para leitura local. |
+| [docker-compose.prod.yml](docker-compose.prod.yml) | Topologia sanitizada da aplicação, rede e volume externos. |
 
 ## Configuração e dados
 
-Snapshots e histórico vivem em `data/`. Agende `refresh_daily.py` no ambiente de execução; abrir a página não executa todo o catálogo. Uma primeira observação local não comprova a mínima histórica. Wishlist pública pode ser consultada sem chave; biblioteca possuída usa chave Steam opcional, que não deve ser salva em URLs compartilhadas.
+Snapshots e histórico vivem em `data/` e não são versionados; apenas [a explicação do diretório](data/README.md) entra no Git. O código viaja pelo GitHub, enquanto o estado acumulado de produção viaja por backup privado verificado do volume `steam_data`, conforme o [guia de continuidade](docs/CONTINUITY.md). Agende `refresh_daily.py` no ambiente de execução; abrir a página não executa todo o catálogo. Uma primeira observação local não comprova a mínima histórica. Wishlist pública pode ser consultada sem chave; biblioteca possuída usa chave Steam opcional, que não deve ser salva em URLs compartilhadas.
 
 ## Verificação
 
 ```sh
-python -m unittest discover
-# No ambiente Windows configurado:
+./scripts/check.ps1 # Windows
+./scripts/check.sh  # Linux/macOS
+# Gate completo de pré-publicação, sem publicar:
 ./deploy/ship.ps1 -NoDeploy
 ```
 
@@ -82,5 +96,8 @@ Fontes podem restringir consultas ou publicar dados incompletos. O ranking não 
 
 - [Guia de manutenção e operação](docs/PROJECT_GUIDE.md)
 - [Guia técnico detalhado](GUIDE.md)
+- [Continuidade em outro computador e transporte de dados](docs/CONTINUITY.md)
+- [Instruções obrigatórias para pessoas e IAs](AGENTS.md)
+- [Como contribuir](CONTRIBUTING.md)
 
 O banner é uma ilustração original de identidade criada com IA. Objetos, telas e valores ilustrados não são capturas da aplicação, resultados medidos nem marcas oficiais de terceiros.

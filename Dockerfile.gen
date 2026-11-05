@@ -14,8 +14,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Só o gerador precisa de requests + beautifulsoup4 (sem flask/gunicorn).
-RUN pip install --no-cache-dir "requests>=2.31" "beautifulsoup4>=4.12"
+# O lock único mantém app, coleta local e imagem do gerador reproduzíveis.
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY steam_sale_ranker.py free_games.py epic_deals.py gamepass.py ./
 COPY catarse.py discovery.py steam_releases.py refresh_daily.py rerank_snapshot.py gamepass_prices.py ./

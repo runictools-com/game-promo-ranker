@@ -12,8 +12,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Dependências primeiro (cache de layer)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # Código da app + assets do frontend
 COPY app.py gamepass_view.py price_history_view.py favicon.svg ./

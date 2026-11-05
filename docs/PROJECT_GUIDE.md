@@ -44,5 +44,6 @@ A apresentação foi confrontada com os seguintes arquivos e diretórios do chec
 - [refresh_daily.py](../refresh_daily.py) — Orquestra coletores e registra a situação de cada fonte.
 - [steam_sale_ranker.py](../steam_sale_ranker.py) — Coleta e pontuação das promoções Steam.
 - [price_history_store.py](../price_history_store.py) — Persistência do histórico de preços.
-- [index.html](../index.html) — Interface; complementada por static/.
+- [static/index.html](../static/index.html) — Interface realmente servida; complementada pelos demais arquivos em `static/`.
 - [deploy/ship.ps1](../deploy/ship.ps1) — Entrega orquestrada; não necessária para leitura local.
+- [CONTINUITY.md](CONTINUITY.md) — Clone reproduzível, separação código/dados e transporte privado do volume.

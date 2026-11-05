@@ -1,17 +1,34 @@
 [CmdletBinding()]
-param([switch]$NoDeploy, [switch]$RerankOnly, [switch]$GamepassPricesOnly, [switch]$HistoryOnly, [switch]$DiscoveryOnly, [switch]$HistoricalImportOnly)
+param(
+    [switch]$NoDeploy,
+    [switch]$RerankOnly,
+    [switch]$GamepassPricesOnly,
+    [switch]$HistoryOnly,
+    [switch]$DiscoveryOnly,
+    [switch]$HistoricalImportOnly,
+    [string]$Python
+)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-$python = 'C:/Users/eep0x10/scoop/apps/python/current/python.exe'
+$venvPython = Join-Path $repo '.venv/Scripts/python.exe'
+$pythonExe = if ($Python) {
+    $Python
+} elseif ($env:GAMEPROMO_PYTHON) {
+    $env:GAMEPROMO_PYTHON
+} elseif (Test-Path -LiteralPath $venvPython) {
+    $venvPython
+} else {
+    (Get-Command python -ErrorAction Stop).Source
+}
 Push-Location $repo
 try {
-    & $python -m unittest discover -v
+    & $pythonExe -m unittest discover -v
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
     foreach ($file in @('static/app.js','static/discovery.js','static/releases.js')) {
         node --check $file
         if ($LASTEXITCODE -ne 0) { throw "Syntax failed: $file" }
     }
-    & $python verify_release.py
+    & $pythonExe verify_release.py
     if ($LASTEXITCODE -ne 0) { throw 'Release feature contract failed' }
     git diff --check
     if ($LASTEXITCODE -ne 0) { throw 'Whitespace check failed' }

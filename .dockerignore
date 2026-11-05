@@ -8,3 +8,9 @@ data/
 _prev_appids.json
 *.tmp
 README.md
+AGENTS.md
+GUIDE.md
+docs/
+.github/
+.venv/
+backups/
