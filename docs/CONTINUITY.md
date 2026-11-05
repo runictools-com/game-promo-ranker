@@ -24,6 +24,8 @@ cd game-promo-ranker
 
 Leia `AGENTS.md` antes de editar. Ele identifica fontes de verdade, invariantes e critérios de pronto. A interface servida é `static/index.html`; o `index.html` da raiz é legado e não deve receber mudanças isoladas.
 
+O bootstrap configura `core.hooksPath=.githooks`. O hook `pre-push` executa o gate local e recusa o envio se testes, contrato, JavaScript ou diff falharem. Não use `--no-verify` para contornar uma falha; corrija a causa.
+
 ## Código versus estado operacional
 
 O Git guarda código e configuração sanitizada. Estes itens ficam fora do repositório:

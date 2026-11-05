@@ -70,7 +70,7 @@ git diff --check
 
 Não versione snapshots privados, perfis, chaves Steam, credenciais SSH, logs com URLs sensíveis, `.venv` ou arquivos temporários. Revise `git status` e o diff: nem todo artefato sensível tem regra em `.gitignore`. Chave Steam opcional só deve transitar na consulta necessária; não a persista nem a reproduza em exemplos, logs ou links compartilhados. Valide dados externos e escape conteúdo inserido na UI.
 
-Antes de editar, confirme checkout, branch, upstream e alterações alheias; não reverta ou faça stash delas para limpar o trabalho. Use branch de trabalho conforme o fluxo da tarefa. Antes de publicar, integre o upstream sem reescrever histórico compartilhado e deixe mudanças revisadas e commitadas.
+Antes de editar, confirme checkout, branch, upstream e alterações alheias; não reverta ou faça stash delas para limpar o trabalho. Use branch de trabalho conforme o fluxo da tarefa. O bootstrap ativa `.githooks/pre-push`, que bloqueia o envio quando o gate local falha; não ignore, remova nem use `--no-verify` para contornar erro. Antes de publicar, integre o upstream sem reescrever histórico compartilhado e deixe mudanças revisadas e commitadas.
 
 A entrega canônica é `./deploy/ship.ps1`; consulte o script e `GUIDE.md` para modos parciais. O wrapper executa preflight de produção, push e release remota com lock, verificação de revisão e imagens de rollback. Não substitua por comandos SSH/Compose avulsos. `.codex/release-contract.json`, `verify_release.py` e `tests/test_release_contract.py` são contratos executáveis: atualize-os junto de funcionalidade durável aceita, sem remover verificações para contornar falhas.
 

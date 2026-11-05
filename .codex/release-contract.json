@@ -17,6 +17,7 @@
     "scripts/bootstrap.sh",
     "scripts/check.ps1",
     "scripts/check.sh",
+    ".githooks/pre-push",
     "deploy/run_daily.sh",
     "static/app.js",
     "static/styles.css",

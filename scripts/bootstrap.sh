@@ -6,4 +6,5 @@ python_bin=${GAMEPROMO_PYTHON:-python3.12}
 
 "$python_bin" -m venv "$repo/.venv"
 "$repo/.venv/bin/python" -m pip install --require-hashes -r "$repo/requirements.lock"
+git -C "$repo" config core.hooksPath .githooks
 printf '%s\n' "Ambiente pronto: $repo/.venv/bin/python"

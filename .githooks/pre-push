@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+repo=$(git rev-parse --show-toplevel)
+cd "$repo"
+
+case "${OS:-}" in
+  Windows_NT)
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
+    ;;
+  *)
+    ./scripts/check.sh
+    ;;
+esac
